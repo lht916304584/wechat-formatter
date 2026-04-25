@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>微信排版工具</title>
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css" id="hljs-theme">
+  <script src="https://cdn.bootcdn.net/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+  <script src="https://cdn.bootcdn.net/ajax/libs/codemirror/5.65.16/mode/markdown/markdown.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <!-- 顶部工具栏 -->
+    <header class="toolbar">
+      <div class="toolbar-left">
+        <h1 class="logo">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="3" ry="3"></rect>
+            <line x1="3" y1="9" x2="21" y2="9"></line>
+            <line x1="9" y1="21" x2="9" y2="9"></line>
+          </svg>
+          微信排版
+        </h1>
+        <div class="toolbar-divider"></div>
+        <div class="format-selector">
+          <label>格式</label>
+          <select id="inputFormat">
+            <option value="markdown">Markdown</option>
+            <option value="html">HTML</option>
+            <option value="text">纯文本</option>
+          </select>
+        </div>
+        <div class="template-selector">
+          <label>主题</label>
+          <select id="templateSelect">
+            <option value="tech">科技深蓝</option>
+            <option value="elegant">文艺雅致</option>
+            <option value="business">商务简约</option>
+            <option value="fresh">清新自然</option>
+            <option value="romantic">浪漫粉紫</option>
+            <option value="vibrant">活力橙黄</option>
+            <option value="classic">古典墨绿</option>
+            <option value="minimal">极简黑白</option>
+            <option value="warm">温暖焦糖</option>
+          </select>
+        </div>
+      </div>
+      <div class="toolbar-right">
+        <button id="btnCopy" class="btn btn-primary">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+          复制到微信
+        </button>
+        <button id="btnExportHtml" class="btn btn-secondary">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          导出 HTML
+        </button>
+        <button id="btnViewHtml" class="btn btn-outline">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 18 22 12 16 6"></polyline>
+            <polyline points="8 6 2 12 8 18"></polyline>
+          </svg>
+          源码
+        </button>
+        <button id="btnImportFile" class="btn btn-outline">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+          </svg>
+          导入文件
+        </button>
+        <button id="btnHistory" class="btn btn-outline">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="1 4 1 10 7 10"></polyline>
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+          </svg>
+          历史版本
+        </button>
+        <button id="btnImageBed" class="btn btn-outline" title="图床设置">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+            <polyline points="21 15 16 10 5 21"></polyline>
+          </svg>
+          图床设置
+        </button>
+        <input type="file" id="fileInput" accept=".md,.markdown,.txt,.html,.htm" style="display:none">
+      </div>
+    </header>
+
+    <!-- 主体区域 -->
+    <main class="editor-container">
+      <!-- 左侧：编辑区 -->
+      <div class="editor-panel">
+        <div class="panel-header">
+          <div class="panel-header-left">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="16 18 22 12 16 6"></polyline>
+              <polyline points="8 6 2 12 8 18"></polyline>
+            </svg>
+            <span>编辑</span>
+          </div>
+          <button id="btnClear" class="btn-small" title="清空内容">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+            清空
+          </button>
+        </div>
+        <div class="md-toolbar" id="mdToolbar">
+          <button data-cmd="bold" title="加粗 (Ctrl+B)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"></path><path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"></path></svg>
+          </button>
+          <button data-cmd="italic" title="斜体 (Ctrl+I)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="4" x2="10" y2="4"></line><line x1="14" y1="20" x2="5" y2="20"></line><line x1="15" y1="4" x2="9" y2="20"></line></svg>
+          </button>
+          <button data-cmd="heading" title="标题">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 12h12"></path><path d="M6 20V4"></path><path d="M18 20V4"></path></svg>
+          </button>
+          <button data-cmd="quote" title="引用">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"></path><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"></path></svg>
+          </button>
+          <button data-cmd="code" title="代码">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+          </button>
+          <button data-cmd="ul" title="无序列表">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+          </button>
+          <button data-cmd="ol" title="有序列表">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="10" y1="6" x2="21" y2="6"></line><line x1="10" y1="12" x2="21" y2="12"></line><line x1="10" y1="18" x2="21" y2="18"></line><path d="M4 6h1v4"></path><path d="M4 10h2"></path><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"></path></svg>
+          </button>
+          <button data-cmd="link" title="链接">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+          </button>
+          <button data-cmd="hr" title="分割线">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          </button>
+          <div class="md-toolbar-divider"></div>
+          <button data-cmd="format" title="一键智能排版 (Ctrl+Shift+F)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+          </button>
+          <button data-cmd="find" title="查找替换 (Ctrl+F)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </button>
+        </div>
+        <div class="find-bar" id="findBar" style="display:none">
+          <input type="text" id="findInput" placeholder="查找">
+          <input type="text" id="replaceInput" placeholder="替换为">
+          <button id="btnFindPrev" title="上一个">↑</button>
+          <button id="btnFindNext" title="下一个">↓</button>
+          <button id="btnReplace" title="替换">替换</button>
+          <button id="btnReplaceAll" title="全部替换">全部</button>
+          <button id="btnCloseFind" title="关闭">✕</button>
+        </div>
+        <textarea id="editor" spellcheck="false" placeholder="在此粘贴或输入文章内容...&#10;&#10;支持 Markdown 语法，实时预览排版效果。"></textarea>
+        <div class="drag-overlay" id="dragOverlay" style="display:none">
+          <div class="drag-overlay-content">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            <p>释放以上传图片或导入 Markdown 文件</p>
+          </div>
+        </div>
+        <div class="editor-statusbar" id="editorStatus">
+          <span id="statusText">0 字符 · 0 汉字 · 约 1 分钟阅读</span>
+          <span class="status-right">
+            <span class="save-indicator" id="saveIndicator"></span>
+            <span class="target-wrap">
+              <label for="wordTarget">目标字数</label>
+              <input type="number" id="wordTarget" placeholder="0" min="0">
+              <span id="targetProgress"></span>
+            </span>
+          </span>
+        </div>
+      </div>
+
+      <!-- 右侧：预览区 -->
+      <div class="preview-panel">
+        <div class="panel-header">
+          <div class="panel-header-left">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+            <span>预览</span>
+          </div>
+          <div class="panel-header-right">
+            <span id="compatStatus" class="compat-status" title="微信兼容性检查结果"></span>
+            <button id="btnToggleOutline" class="btn-small" title="文章大纲">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+              </svg>
+              大纲
+            </button>
+            <div class="device-toggle" id="deviceToggle">
+              <button id="btnMobilePreview" class="btn-small active" title="手机预览模式">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+                  <line x1="12" y1="18" x2="12.01" y2="18"></line>
+                </svg>
+                手机
+              </button>
+              <button id="btnDesktopPreview" class="btn-small" title="桌面预览模式">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                  <line x1="8" y1="21" x2="16" y2="21"></line>
+                  <line x1="12" y1="17" x2="12" y2="21"></line>
+                </svg>
+                桌面
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="preview-wrapper" id="previewWrapper">
+          <div class="outline-panel" id="outlinePanel">
+            <div class="outline-header">文章大纲</div>
+            <div class="outline-list" id="outlineList"></div>
+          </div>
+          <div class="preview-content" id="preview">
+            <div class="preview-placeholder">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#d0d5dd" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                <polyline points="21 15 16 10 5 21"></polyline>
+              </svg>
+              <p>在左侧输入内容，这里将实时显示排版预览效果</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- HTML 导出弹窗 -->
+  <div id="htmlModal" class="modal" style="display:none">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <code x="16" y="18">
+            <path d="M10 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-2"></path>
+            <polyline points="8 17 12 21 16 17"></polyline>
+          </svg>
+          HTML 源代码
+        </div>
+        <button class="modal-close" id="btnCloseModal"></button>
+      </div>
+      <div class="modal-body">
+        <textarea id="htmlOutput" readonly></textarea>
+      </div>
+      <div class="modal-footer">
+        <button id="btnCopyHtml" class="btn btn-primary">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+          复制代码
+        </button>
+        <button id="btnDownloadHtml" class="btn btn-secondary">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          下载文件
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 历史版本弹窗 -->
+  <div id="historyModal" class="modal" style="display:none">
+    <div class="modal-content" style="max-width:520px">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="1 4 1 10 7 10"></polyline>
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+          </svg>
+          历史版本
+        </div>
+        <button class="modal-close" id="btnCloseHistory"></button>
+      </div>
+      <div class="modal-body" style="padding:0">
+        <div id="historyList" style="max-height:50vh;overflow-y:auto;padding:12px 0"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="btnClearHistory" class="btn btn-outline" style="margin-right:auto">清空历史</button>
+        <button id="btnSaveVersion" class="btn btn-primary">保存当前版本</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 图床设置弹窗 -->
+  <div id="imageBedModal" class="modal" style="display:none">
+    <div class="modal-content" style="max-width:480px">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+            <polyline points="21 15 16 10 5 21"></polyline>
+          </svg>
+          图床设置
+        </div>
+        <button class="modal-close" id="btnCloseImageBed"></button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
+        <div>
+          <label style="display:block;font-size:12px;color:var(--text-tertiary);margin-bottom:4px">上传接口 URL</label>
+          <input type="text" id="imgBedUrl" placeholder="https://sm.ms/api/v2/upload" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--surface);color:var(--text);outline:none;font-family:inherit">
+        </div>
+        <div>
+          <label style="display:block;font-size:12px;color:var(--text-tertiary);margin-bottom:4px">文件字段名</label>
+          <input type="text" id="imgBedField" value="smfile" placeholder="如 smfile / file" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--surface);color:var(--text);outline:none;font-family:inherit">
+        </div>
+        <div>
+          <label style="display:block;font-size:12px;color:var(--text-tertiary);margin-bottom:4px">图片 URL 响应字段路径（如 data.url）</label>
+          <input type="text" id="imgBedPath" placeholder="data.url" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--surface);color:var(--text);outline:none;font-family:inherit">
+        </div>
+        <div>
+          <label style="display:block;font-size:12px;color:var(--text-tertiary);margin-bottom:4px">Authorization Header（可选）</label>
+          <input type="text" id="imgBedAuth" placeholder="Bearer xxx" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--surface);color:var(--text);outline:none;font-family:inherit">
+        </div>
+        <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">
+          配置后，粘贴/拖拽的图片会自动上传到图床并替换为外链。<br>
+          留空则保持 base64 方式（微信兼容性警告）。
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btnTestUpload" class="btn btn-outline">测试上传</button>
+        <button id="btnSaveImageBed" class="btn btn-primary">保存配置</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast 提示 -->
+  <div id="toast" class="toast" style="display:none"></div>
+
+  <script src="js/themes.js"></script>
+  <script src="js/wechat-renderer.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
