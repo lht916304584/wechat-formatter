@@ -1142,7 +1142,8 @@
   const btnAiInsert = document.getElementById('btnAiInsert');
   const btnAiNewTopic = document.getElementById('btnAiNewTopic');
   const aiApiKeyInput = document.getElementById('aiApiKey');
-  const aiModelSelect = document.getElementById('aiModel');
+  const aiModelInput = document.getElementById('aiModel');
+  const aiApiUrlInput = document.getElementById('aiApiUrl');
   const aiConfigStatus = document.getElementById('aiConfigStatus');
 
   let aiConversation = [];
@@ -1183,17 +1184,18 @@
   function loadAiConfig() {
     const cfg = getAiConfig();
     if (cfg.apiKey) aiApiKeyInput.value = cfg.apiKey;
-    if (cfg.model) aiModelSelect.value = cfg.model;
+    if (cfg.model) aiModelInput.value = cfg.model;
+    if (cfg.apiUrl) aiApiUrlInput.value = cfg.apiUrl;
     updateAiConfigStatus();
   }
 
   function updateAiConfigStatus() {
     const cfg = getAiConfig();
-    if (cfg.apiKey) {
-      aiConfigStatus.textContent = 'API Key 已配置（模型：' + (cfg.model || 'glm-4-flash') + '）';
+    if (cfg.apiKey && cfg.apiUrl) {
+      aiConfigStatus.textContent = '已配置（模型：' + (cfg.model || '未指定') + '）';
       aiConfigStatus.className = 'ai-config-status ok';
     } else {
-      aiConfigStatus.textContent = '请先配置 API Key 才能使用';
+      aiConfigStatus.textContent = '请先配置 API 地址和 Key';
       aiConfigStatus.className = 'ai-config-status error';
     }
   }
@@ -1249,20 +1251,20 @@
 
   async function streamAiResponse(messages, onChunk, onDone, onError) {
     const cfg = getAiConfig();
-    if (!cfg.apiKey) {
-      onError('请先在设置栏中填入 API Key');
+    if (!cfg.apiKey || !cfg.apiUrl) {
+      onError('请先在设置栏中填入 API 地址和 Key');
       return;
     }
     aiAbortController = new AbortController();
     try {
-      const res = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+      const res = await fetch(cfg.apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ' + cfg.apiKey,
         },
         body: JSON.stringify({
-          model: cfg.model || 'glm-4-flash',
+          model: cfg.model || 'gpt-4o-mini',
           messages: messages,
           stream: true,
           temperature: 0.7,
@@ -1334,7 +1336,7 @@
 
     const cfg = getAiConfig();
     if (!cfg.apiKey) {
-      showToast('请先配置 API Key');
+      showToast('请先配置 API 地址和 Key');
       return;
     }
 
@@ -1468,9 +1470,16 @@
       clearAiChat();
     });
     document.getElementById('btnSaveAiConfig')?.addEventListener('click', () => {
+      const apiUrl = aiApiUrlInput.value.trim();
+      const apiKey = aiApiKeyInput.value.trim();
+      if (!apiUrl || !apiKey) {
+        showToast('请填写 API 地址和 Key');
+        return;
+      }
       setAiConfig({
-        apiKey: aiApiKeyInput.value.trim(),
-        model: aiModelSelect.value,
+        apiUrl: apiUrl,
+        apiKey: apiKey,
+        model: aiModelInput.value.trim() || 'gpt-4o-mini',
       });
       updateAiConfigStatus();
       showToast('API 配置已保存');

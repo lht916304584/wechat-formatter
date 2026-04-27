@@ -328,13 +328,11 @@
       <!-- API 设置栏 -->
       <div class="ai-settings" id="aiSettings">
         <div class="ai-settings-row">
-          <input type="password" id="aiApiKey" placeholder="输入智谱 API Key" autocomplete="off">
-          <select id="aiModel">
-            <option value="glm-4-flash">GLM-4-Flash</option>
-            <option value="glm-4-air">GLM-4-Air</option>
-            <option value="glm-4-plus">GLM-4-Plus</option>
-            <option value="glm-4">GLM-4</option>
-          </select>
+          <input type="text" id="aiApiUrl" placeholder="API 地址（如 https://open.bigmodel.cn/api/paas/v4/chat/completions）" autocomplete="off">
+        </div>
+        <div class="ai-settings-row">
+          <input type="password" id="aiApiKey" placeholder="API Key" autocomplete="off">
+          <input type="text" id="aiModel" placeholder="模型名称（如 gpt-4o、glm-4-flash）">
           <button id="btnSaveAiConfig" class="btn btn-small">保存</button>
         </div>
         <div id="aiConfigStatus" class="ai-config-status"></div>
