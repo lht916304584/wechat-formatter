@@ -29,6 +29,7 @@
   const saveIndicator = document.getElementById('saveIndicator');
   const statusText = document.getElementById('statusText');
   const dragOverlay = document.getElementById('dragOverlay');
+  const editorPanel = document.querySelector('.editor-panel');
 
   // ===== 初始化 CodeMirror（带加载失败回退） =====
   let cm;
@@ -67,6 +68,12 @@
         editor.value = editor.value.slice(0, start) + v + editor.value.slice(end);
         editor.selectionStart = editor.selectionEnd = start + v.length;
       },
+      getSelection() { return editor.value.slice(editor.selectionStart, editor.selectionEnd); },
+      getCursor() { const v = editor.value.slice(0, editor.selectionStart); const lines = v.split('\n'); return { line: lines.length - 1, ch: lines[lines.length - 1].length }; },
+      setCursor(pos) { const lines = editor.value.split('\n'); let idx = 0; for (let i = 0; i < pos.line && i < lines.length; i++) idx += lines[i].length + 1; idx += pos.ch; editor.selectionStart = editor.selectionEnd = idx; },
+      setSelection(from, to) { const lines = editor.value.split('\n'); let si = 0; for (let i = 0; i < from.line && i < lines.length; i++) si += lines[i].length + 1; si += from.ch; let ei = 0; for (let i = 0; i < to.line && i < lines.length; i++) ei += lines[i].length + 1; ei += to.ch; editor.selectionStart = si; editor.selectionEnd = ei; },
+      scrollIntoView() {},
+      posFromIndex(idx) { const v = editor.value.slice(0, idx); const lines = v.split('\n'); return { line: lines.length - 1, ch: lines[lines.length - 1].length }; },
       focus() { editor.focus(); },
       on(event, handler) {
         if (event === 'change') {
@@ -331,139 +338,7 @@
     });
   }
 
-  // ===== 纯文本 → Markdown 智能转换 =====
-  // 对齐 renderPlainText 的识别规则，生成能被 renderMarkdown 充分利用的 Markdown
-  function smartConvertTextToMarkdown(text) {
-    const lines = text.split('\n');
-    const out = [];
-    let isFirstContent = true;
-    let afterDivider = false;
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const trimmed = line.trim();
-
-      if (!trimmed) {
-        out.push('');
-        continue;
-      }
-
-      // 已有 Markdown 语法保留原样
-      if (/^#{1,6}\s/.test(trimmed) || /^```/.test(trimmed) || /^\s*>\s/.test(trimmed) ||
-          /^[-*+]\s/.test(trimmed) || /^\d+\.\s/.test(trimmed)) {
-        out.push(line);
-        isFirstContent = false;
-        continue;
-      }
-
-      // 分隔线
-      if (/^[-=_*~#]{3,}$/.test(trimmed)) {
-        out.push('---');
-        afterDivider = true;
-        isFirstContent = false;
-        continue;
-      }
-
-      // 第一行内容 → 封面（用 h1 触发 cover）
-      if (isFirstContent) {
-        out.push(`# ${trimmed}`);
-        isFirstContent = false;
-        continue;
-      }
-
-      // 步骤标记：第一步：xxx → 有序列表 + 粗体步骤名
-      const stepMatch = trimmed.match(/^第[一二三四五六七八九十\d]+步[：:]\s*(.*)/);
-      if (stepMatch) {
-        out.push(`1. **${stepMatch[1]}**`);
-        isFirstContent = false;
-        continue;
-      }
-
-      // Callout 检测（整行）
-      if (/\bNOTE\b|💡/.test(trimmed)) {
-        out.push(`> 💡 NOTE：${trimmed.replace(/💡\s*/, '').replace(/\bNOTE\b[：:]?\s*/, '')}`);
-        isFirstContent = false;
-        continue;
-      }
-      if (/\bTIP\b|✅|小贴士/.test(trimmed)) {
-        out.push(`> ✅ TIP：${trimmed.replace(/✅\s*/, '').replace(/\bTIP\b[：:]?\s*/, '')}`);
-        isFirstContent = false;
-        continue;
-      }
-      if (/⚠️|警告|WARNING/.test(trimmed)) {
-        out.push(`> ⚠️ 注意：${trimmed.replace(/⚠️\s*/, '')}`);
-        isFirstContent = false;
-        continue;
-      }
-
-      // 引用：引号包裹的长句
-      if (/^[""""「].*[""""」]$/.test(trimmed) && trimmed.length > 10 && trimmed.length < 200) {
-        out.push(`> ${trimmed.replace(/^[""「」]/, '').replace(/[""「」]$/, '')}`);
-        isFirstContent = false;
-        continue;
-      }
-
-      // 格言：含 —— 归属
-      const mottoMatch = trimmed.match(/^(.+?)\s*[—\-]{2,}\s*(.+)$/);
-      if (mottoMatch && trimmed.length < 120) {
-        out.push(`> ${mottoMatch[1].trim()} —— ${mottoMatch[2].trim()}`);
-        isFirstContent = false;
-        continue;
-      }
-
-      // 无序列表：- • · 开头
-      if (/^[-•·]\s/.test(trimmed)) {
-        out.push('- ' + trimmed.replace(/^[-•·]\s+/, ''));
-        isFirstContent = false;
-        continue;
-      }
-
-      // 有序列表：数字开头
-      if (/^\d+[\.、)\)]\s/.test(trimmed)) {
-        out.push(trimmed.replace(/^(\d+)[\.、)\)]\s+/, '$1. '));
-        isFirstContent = false;
-        continue;
-      }
-
-      // 中文编号标题
-      if (/^[一二三四五六七八九十百]+[、．.]/.test(trimmed) || /^第[一二三四五六七八九十百\d]+[章节篇部]/.test(trimmed)) {
-        out.push(`## ${trimmed}`);
-        isFirstContent = false;
-        continue;
-      }
-
-      // 分隔线后的短行 → h2
-      if (afterDivider) {
-        out.push(`## ${trimmed}`);
-        afterDivider = false;
-        continue;
-      }
-
-      // 标题启发式：短行、无结尾标点
-      const sentEnd = /[。；…]/.test(trimmed.slice(-1));
-      if (!sentEnd && trimmed.length <= 25) {
-        out.push(`## ${trimmed}`);
-        isFirstContent = false;
-        continue;
-      }
-      if (!sentEnd && trimmed.length <= 50 && (trimmed.match(/[，,]/g) || []).length <= 1) {
-        out.push(`### ${trimmed}`);
-        isFirstContent = false;
-        continue;
-      }
-
-      // 独立 URL
-      if (/^https?:\/\/\S+$/.test(trimmed)) {
-        out.push(`[${trimmed}](${trimmed})`);
-        isFirstContent = false;
-        continue;
-      }
-
-      out.push(line);
-      isFirstContent = false;
-    }
-    return out.join('\n');
-  }
+  // smartConvertTextToMarkdown 已移至 wechat-renderer.js（全局函数）
 
   // ===== 自动检测内容格式 =====
   function detectFormat(content) {
@@ -690,7 +565,7 @@
     }
     const wrapped = wrapForWechat(currentHtml);
     htmlOutput.value = wrapped;
-    htmlModal.style.display = 'flex';
+    openModal(htmlModal);
   }
 
   function downloadHtml() {
@@ -771,10 +646,23 @@
       showToast('图片超过 5MB，建议先压缩');
       return;
     }
+    // 显示上传状态
+    let overlay = document.getElementById('uploadLoading');
+    if (!overlay && editorPanel) {
+      overlay = document.createElement('div');
+      overlay.id = 'uploadLoading';
+      overlay.className = 'loading-overlay';
+      overlay.innerHTML = '<div class="loading-spinner"></div>';
+      editorPanel.appendChild(overlay);
+    }
+    if (overlay) overlay.style.display = 'flex';
+    const hideLoading = () => { if (overlay) overlay.style.display = 'none'; };
+
     const cfg = getImgBedConfig();
     if (cfg && cfg.url) {
       showToast('正在上传图片...');
       uploadImageToBed(file).then(url => {
+        hideLoading();
         if (url) {
           insertImageMarkdown(url);
           showToast('图片已上传');
@@ -785,6 +673,7 @@
           reader.readAsDataURL(file);
         }
       }).catch(() => {
+        hideLoading();
         showToast('图床上传失败，已转为 base64');
         const reader = new FileReader();
         reader.onload = (e) => insertImageMarkdown(e.target.result);
@@ -793,7 +682,7 @@
       return;
     }
     const reader = new FileReader();
-    reader.onload = (e) => insertImageMarkdown(e.target.result);
+    reader.onload = (e) => { hideLoading(); insertImageMarkdown(e.target.result); };
     reader.readAsDataURL(file);
   }
 
@@ -851,6 +740,7 @@
     : editor;
   let isEditorScrolling = false;
   let isPreviewScrolling = false;
+  let scrollRaf = null;
 
   function syncScrollTo(source, target) {
     const max = source.scrollHeight - source.clientHeight;
@@ -865,14 +755,22 @@
     cmScroller.addEventListener('scroll', () => {
       if (isPreviewScrolling) return;
       isEditorScrolling = true;
-      syncScrollTo(cmScroller, previewWrapper);
-      setTimeout(() => { isEditorScrolling = false; }, 60);
+      if (scrollRaf) cancelAnimationFrame(scrollRaf);
+      scrollRaf = requestAnimationFrame(() => {
+        syncScrollTo(cmScroller, previewWrapper);
+        scrollRaf = null;
+      });
+      setTimeout(() => { isEditorScrolling = false; }, 80);
     });
     previewWrapper.addEventListener('scroll', () => {
       if (isEditorScrolling) return;
       isPreviewScrolling = true;
-      syncScrollTo(previewWrapper, cmScroller);
-      setTimeout(() => { isPreviewScrolling = false; }, 60);
+      if (scrollRaf) cancelAnimationFrame(scrollRaf);
+      scrollRaf = requestAnimationFrame(() => {
+        syncScrollTo(previewWrapper, cmScroller);
+        scrollRaf = null;
+      });
+      setTimeout(() => { isPreviewScrolling = false; }, 80);
     });
   }
 
@@ -905,7 +803,7 @@
     btnViewHtml.addEventListener('click', () => {
       if (!currentHtml) { showToast('请先输入内容'); return; }
       htmlOutput.value = wrapForWechat(currentHtml);
-      htmlModal.style.display = 'flex';
+      openModal(htmlModal);
     });
   }
   btnImportFile.addEventListener('click', () => fileInput.click());
@@ -1009,6 +907,40 @@
   const findInput = document.getElementById('findInput');
   const replaceInput = document.getElementById('replaceInput');
   let lastFindIndex = -1;
+  let findResults = [];
+  let findResultIdx = -1;
+
+  function updateFindCount() {
+    let countEl = document.getElementById('findCount');
+    if (!countEl) {
+      countEl = document.createElement('span');
+      countEl.id = 'findCount';
+      countEl.style.cssText = 'font-size:11px;color:var(--text-tertiary);flex-shrink:0;min-width:40px;text-align:right;';
+      const closeBtn = document.getElementById('btnCloseFind');
+      if (closeBtn && findBar) findBar.insertBefore(countEl, closeBtn);
+    }
+    if (findResults.length === 0) {
+      countEl.textContent = findInput?.value ? '0/0' : '';
+    } else {
+      countEl.textContent = `${findResultIdx + 1}/${findResults.length}`;
+    }
+  }
+
+  function buildFindResults() {
+    const query = findInput ? findInput.value : '';
+    findResults = [];
+    findResultIdx = -1;
+    if (!query) { updateFindCount(); return; }
+    const text = cm.getValue();
+    let pos = 0;
+    while (true) {
+      const idx = text.indexOf(query, pos);
+      if (idx === -1) break;
+      findResults.push(idx);
+      pos = idx + 1;
+    }
+    updateFindCount();
+  }
 
   function openFindBar() {
     if (!findBar) return;
@@ -1022,6 +954,10 @@
     if (!findBar) return;
     findBar.style.display = 'none';
     lastFindIndex = -1;
+    findResults = [];
+    findResultIdx = -1;
+    const countEl = document.getElementById('findCount');
+    if (countEl) countEl.textContent = '';
   }
 
   function setEditorSelection(start, end) {
@@ -1039,34 +975,23 @@
     const query = findInput ? findInput.value : '';
     const text = cm.getValue();
     if (!query || !text) return;
-    const start = text.indexOf(query, lastFindIndex + 1);
-    if (start !== -1) {
-      lastFindIndex = start;
-      setEditorSelection(start, start + query.length);
-    } else {
-      const wrapStart = text.indexOf(query, 0);
-      if (wrapStart !== -1 && wrapStart !== lastFindIndex) {
-        lastFindIndex = wrapStart;
-        setEditorSelection(wrapStart, wrapStart + query.length);
-      }
-    }
+    if (findResults.length === 0) buildFindResults();
+    if (findResults.length === 0) return;
+    findResultIdx = (findResultIdx + 1) % findResults.length;
+    lastFindIndex = findResults[findResultIdx];
+    setEditorSelection(lastFindIndex, lastFindIndex + query.length);
+    updateFindCount();
   }
   function findPrev() {
     const query = findInput ? findInput.value : '';
     const text = cm.getValue();
     if (!query || !text) return;
-    const searchEnd = lastFindIndex <= 0 ? text.length : lastFindIndex;
-    const start = text.lastIndexOf(query, searchEnd - 1);
-    if (start !== -1) {
-      lastFindIndex = start;
-      setEditorSelection(start, start + query.length);
-    } else {
-      const wrapStart = text.lastIndexOf(query);
-      if (wrapStart !== -1 && wrapStart !== lastFindIndex) {
-        lastFindIndex = wrapStart;
-        setEditorSelection(wrapStart, wrapStart + query.length);
-      }
-    }
+    if (findResults.length === 0) buildFindResults();
+    if (findResults.length === 0) return;
+    findResultIdx = findResultIdx <= 0 ? findResults.length - 1 : findResultIdx - 1;
+    lastFindIndex = findResults[findResultIdx];
+    setEditorSelection(lastFindIndex, lastFindIndex + query.length);
+    updateFindCount();
   }
   function replaceCurrent() {
     const query = findInput ? findInput.value : '';
@@ -1106,9 +1031,10 @@
     document.getElementById('btnReplaceAll')?.addEventListener('click', replaceAll);
     document.getElementById('btnCloseFind')?.addEventListener('click', closeFindBar);
     findInput?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); findNext(); }
+      if (e.key === 'Enter') { e.preventDefault(); buildFindResults(); findNext(); }
       if (e.key === 'Escape') { closeFindBar(); }
     });
+    findInput?.addEventListener('input', () => { buildFindResults(); });
     replaceInput?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); replaceCurrent(); }
       if (e.key === 'Escape') { closeFindBar(); }
@@ -1121,10 +1047,10 @@
   if (historyModal) {
     document.getElementById('btnHistory')?.addEventListener('click', () => {
       renderHistoryList();
-      historyModal.style.display = 'flex';
+      openModal(historyModal);
     });
     document.getElementById('btnCloseHistory')?.addEventListener('click', () => {
-      historyModal.style.display = 'none';
+      closeModal(historyModal);
     });
     document.getElementById('btnSaveVersion')?.addEventListener('click', () => {
       saveVersion(true);
@@ -1132,7 +1058,7 @@
     });
     document.getElementById('btnClearHistory')?.addEventListener('click', clearAllVersions);
     historyModal.addEventListener('click', (e) => {
-      if (e.target === historyModal) historyModal.style.display = 'none';
+      if (e.target === historyModal) closeModal(historyModal);
     });
     if (historyList) {
       historyList.addEventListener('click', (e) => {
@@ -1140,7 +1066,7 @@
         const deleteBtn = e.target.closest('[data-delete]');
         if (restoreBtn) {
           restoreVersion(Number(restoreBtn.dataset.restore));
-          historyModal.style.display = 'none';
+          closeModal(historyModal);
         }
         if (deleteBtn) {
           deleteVersion(Number(deleteBtn.dataset.delete));
@@ -1164,13 +1090,13 @@
         imgBedPath.value = cfg.path || '';
         imgBedAuth.value = cfg.auth || '';
       }
-      imageBedModal.style.display = 'flex';
+      openModal(imageBedModal);
     });
     document.getElementById('btnCloseImageBed')?.addEventListener('click', () => {
-      imageBedModal.style.display = 'none';
+      closeModal(imageBedModal);
     });
     imageBedModal.addEventListener('click', (e) => {
-      if (e.target === imageBedModal) imageBedModal.style.display = 'none';
+      if (e.target === imageBedModal) closeModal(imageBedModal);
     });
     document.getElementById('btnSaveImageBed')?.addEventListener('click', () => {
       setImgBedConfig({
@@ -1180,7 +1106,7 @@
         auth: imgBedAuth.value.trim(),
       });
       showToast('图床配置已保存');
-      imageBedModal.style.display = 'none';
+      closeModal(imageBedModal);
     });
     document.getElementById('btnTestUpload')?.addEventListener('click', async () => {
       const cfg = {
@@ -1268,7 +1194,6 @@
   });
 
   // 拖拽上传 / 导入
-  const editorPanel = document.querySelector('.editor-panel');
   if (editorPanel) {
     ['dragenter', 'dragover'].forEach(ev => {
       editorPanel.addEventListener(ev, (e) => {
@@ -1302,11 +1227,43 @@
     });
   }
 
-  // 弹窗
-  btnCloseModal.addEventListener('click', () => { htmlModal.style.display = 'none'; });
+  // 弹窗 + 焦点管理
+  function trapFocus(modalEl) {
+    const focusable = modalEl.querySelectorAll('button, input, textarea, select, [tabindex]:not([tabindex="-1"])');
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    first.focus();
+    const handler = (e) => {
+      if (e.key !== 'Tab') return;
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    };
+    modalEl.addEventListener('keydown', handler);
+    modalEl._trapHandler = handler;
+  }
+  function releaseFocus(modalEl) {
+    if (modalEl._trapHandler) {
+      modalEl.removeEventListener('keydown', modalEl._trapHandler);
+      delete modalEl._trapHandler;
+    }
+  }
+
+  function openModal(modalEl) {
+    modalEl.style.display = 'flex';
+    trapFocus(modalEl.querySelector('.modal-content') || modalEl);
+  }
+  function closeModal(modalEl) {
+    releaseFocus(modalEl.querySelector('.modal-content') || modalEl);
+    modalEl.style.display = 'none';
+  }
+  btnCloseModal.addEventListener('click', () => closeModal(htmlModal));
   btnCopyHtml.addEventListener('click', copyHtmlCode);
   btnDownloadHtml.addEventListener('click', downloadHtml);
-  htmlModal.addEventListener('click', (e) => { if (e.target === htmlModal) htmlModal.style.display = 'none'; });
+  htmlModal.addEventListener('click', (e) => { if (e.target === htmlModal) closeModal(htmlModal); });
 
   // 键盘快捷键
   document.addEventListener('keydown', (e) => {
@@ -1341,7 +1298,7 @@
       }
     }
     if (e.key === 'Escape' && htmlModal.style.display !== 'none') {
-      htmlModal.style.display = 'none';
+      closeModal(htmlModal);
     }
     if (e.key === 'Escape' && findBar && findBar.style.display !== 'none') {
       closeFindBar();

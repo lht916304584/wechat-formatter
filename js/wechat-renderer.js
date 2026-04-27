@@ -219,194 +219,156 @@ function renderMarkdown(content) {
 }
 
 /**
- * 渲染纯文本为微信兼容 HTML
- * 逐行扫描，智能识别标题/步骤/列表/引用等结构
+ * 纯文本 → Markdown 智能转换
+ * 统一的规则集，renderPlainText 和 app.js 共用
  */
-function renderPlainText(content) {
-  if (!content || !content.trim()) return '';
-
-  const lines = content.split('\n');
-  let html = '';
+function smartConvertTextToMarkdown(text) {
+  const lines = text.split('\n');
+  const out = [];
   let isFirstContent = true;
   let afterDivider = false;
 
-  // 缓冲区
-  let paragraphLines = [];
-  let steps = [];
-  let listItems = [];
-  let listOrdered = false;
-
-  function flushParagraph() {
-    if (paragraphLines.length > 0) {
-      html += Components.paragraph(paragraphLines.map(l => escapeHtml(l)).join('<br/>'));
-      paragraphLines = [];
-    }
-  }
-  function flushSteps() {
-    if (steps.length > 0) {
-      html += Components.stepCards(steps);
-      steps = [];
-    }
-  }
-  function flushList() {
-    if (listItems.length > 0) {
-      if (listOrdered && listItems.length >= 2 && listItems.length <= 8) {
-        html += Components.stepCards(listItems.map(desc => ({ desc })));
-      } else {
-        html += Components.list(listItems, listOrdered);
-      }
-      listItems = [];
-    }
-  }
-  function flushAll() { flushParagraph(); flushSteps(); flushList(); }
-
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
+    const line = lines[i];
+    const trimmed = line.trim();
 
-    // 空行：刷新段落和列表，但步骤跨空行累积
-    if (!line) {
-      flushParagraph();
-      flushList();
+    if (!trimmed) {
+      out.push('');
+      continue;
+    }
+
+    // 已有 Markdown 语法保留原样
+    if (/^#{1,6}\s/.test(trimmed) || /^```/.test(trimmed) || /^\s*>\s/.test(trimmed) ||
+        /^[-*+]\s/.test(trimmed) || /^\d+\.\s/.test(trimmed)) {
+      out.push(line);
+      isFirstContent = false;
       continue;
     }
 
     // 分隔线
-    if (/^[-=_*~#]{3,}$/.test(line)) {
-      flushAll();
-      html += Components.divider('');
+    if (/^[-=_*~#]{3,}$/.test(trimmed)) {
+      out.push('---');
       afterDivider = true;
-      continue;
-    }
-
-    // 列表项：- • · 开头
-    if (/^[-•·]\s/.test(line)) {
-      flushParagraph();
-      flushSteps();
-      listItems.push(escapeHtml(line.replace(/^[-•·]\s+/, '')));
-      listOrdered = false;
-      afterDivider = false;
-      continue;
-    }
-
-    // 列表项：数字开头 1. 1) 1、
-    if (/^\d+[\.、)\)]\s/.test(line)) {
-      flushParagraph();
-      flushSteps();
-      listItems.push(escapeHtml(line.replace(/^\d+[\.、)\)]\s+/, '')));
-      listOrdered = true;
-      afterDivider = false;
-      continue;
-    }
-
-    // 步骤标记：第一步： 第二步：
-    const stepMatch = line.match(/^第[一二三四五六七八九十\d]+步[：:]\s*(.*)/);
-    if (stepMatch) {
-      flushParagraph();
-      flushList();
-      steps.push({ title: stepMatch[1], desc: '' });
-      afterDivider = false;
-      continue;
-    }
-
-    // 步骤上下文中，内容追加到当前步骤
-    if (steps.length > 0) {
-      const last = steps[steps.length - 1];
-      last.desc = last.desc ? last.desc + '<br/>' + escapeHtml(line) : escapeHtml(line);
-      continue;
-    }
-
-    // 非列表行触刷列表
-    if (listItems.length > 0) flushList();
-
-    // 第一行内容 → 封面
-    if (isFirstContent) {
       isFirstContent = false;
-      html += Components.cover(line, '', '', '');
       continue;
     }
 
-    // 分隔线后的行 → 一定作为 h2 标题
-    if (afterDivider) {
-      html += Components.h2(line);
-      afterDivider = false;
+    // 第一行内容 → 封面（h1 触发 cover）
+    if (isFirstContent) {
+      out.push(`# ${trimmed}`);
+      isFirstContent = false;
+      continue;
+    }
+
+    // 步骤标记：第一步：xxx
+    const stepMatch = trimmed.match(/^第[一二三四五六七八九十\d]+步[：:]\s*(.*)/);
+    if (stepMatch) {
+      out.push(`1. **${stepMatch[1]}**`);
       continue;
     }
 
     // Callout 检测
-    if (/\bNOTE\b|💡/.test(line)) {
-      flushParagraph();
-      html += Components.calloutInfo(escapeHtml(line));
+    if (/\bNOTE\b|💡/.test(trimmed)) {
+      out.push(`> 💡 NOTE：${trimmed.replace(/💡\s*/, '').replace(/\bNOTE\b[：:]?\s*/, '')}`);
       continue;
     }
-    if (/\bTIP\b|✅|小贴士/.test(line)) {
-      flushParagraph();
-      html += Components.calloutTip(escapeHtml(line));
+    if (/\bTIP\b|✅|小贴士/.test(trimmed)) {
+      out.push(`> ✅ TIP：${trimmed.replace(/✅\s*/, '').replace(/\bTIP\b[：:]?\s*/, '')}`);
       continue;
     }
-    if (/⚠️|警告|WARNING/.test(line)) {
-      flushParagraph();
-      html += Components.calloutWarning(escapeHtml(line));
+    if (/⚠️|警告|WARNING/.test(trimmed)) {
+      out.push(`> ⚠️ 注意：${trimmed.replace(/⚠️\s*/, '')}`);
       continue;
     }
 
     // 引用：引号包裹的长句
-    if (/^[""「].*[""」]$/.test(line) && line.length > 10 && line.length < 200) {
-      flushParagraph();
-      html += Components.quote(escapeHtml(line), '');
+    if (/^[""""「].*[""""」]$/.test(trimmed) && trimmed.length > 10 && trimmed.length < 200) {
+      out.push(`> ${trimmed.replace(/^[""「]/, '').replace(/[""」]$/, '')}`);
       continue;
     }
 
     // 格言：含 —— 归属
-    const mottoMatch = line.match(/^(.+?)\s*[—\-]{2,}\s*(.+)$/);
-    if (mottoMatch && line.length < 120) {
-      flushParagraph();
-      html += Components.mottoCard(mottoMatch[1].trim(), mottoMatch[2].trim());
+    const mottoMatch = trimmed.match(/^(.+?)\s*[—\-]{2,}\s*(.+)$/);
+    if (mottoMatch && trimmed.length < 120) {
+      out.push(`> ${mottoMatch[1].trim()} —— ${mottoMatch[2].trim()}`);
       continue;
     }
 
-    // 标题检测：中文编号
-    if (/^[一二三四五六七八九十百]+[、．.]/.test(line) || /^第[一二三四五六七八九十百\d]+[章节篇部]/.test(line)) {
-      flushParagraph();
-      html += Components.h2(line);
+    // 无序列表：- • · 开头
+    if (/^[-•·]\s/.test(trimmed)) {
+      out.push('- ' + trimmed.replace(/^[-•·]\s+/, ''));
       continue;
     }
 
-    // 标题检测：短行无句末标点
-    const sentEnd = /[。；…]/.test(line.slice(-1));
-    if (!sentEnd && line.length <= 25) {
-      flushParagraph();
-      html += Components.h2(line);
-      continue;
-    }
-    if (!sentEnd && line.length <= 50 && (line.match(/[，,]/g) || []).length <= 1) {
-      flushParagraph();
-      html += Components.h3(line);
+    // 有序列表：数字开头
+    if (/^\d+[\.、)\)]\s/.test(trimmed)) {
+      out.push(trimmed.replace(/^(\d+)[\.、)\)]\s+/, '$1. '));
       continue;
     }
 
-    // 普通段落行
-    paragraphLines.push(line);
+    // 中文编号标题
+    if (/^[一二三四五六七八九十百]+[、．.]/.test(trimmed) || /^第[一二三四五六七八九十百\d]+[章节篇部]/.test(trimmed)) {
+      out.push(`## ${trimmed}`);
+      continue;
+    }
+
+    // 分隔线后的短行 → h2
+    if (afterDivider) {
+      out.push(`## ${trimmed}`);
+      afterDivider = false;
+      continue;
+    }
+
+    // 标题启发式：短行、无结尾标点
+    const sentEnd = /[。；…]/.test(trimmed.slice(-1));
+    if (!sentEnd && trimmed.length <= 25) {
+      out.push(`## ${trimmed}`);
+      continue;
+    }
+    if (!sentEnd && trimmed.length <= 50 && (trimmed.match(/[，,]/g) || []).length <= 1) {
+      out.push(`### ${trimmed}`);
+      continue;
+    }
+
+    // 独立 URL
+    if (/^https?:\/\/\S+$/.test(trimmed)) {
+      out.push(`[${trimmed}](${trimmed})`);
+      continue;
+    }
+
+    out.push(line);
+    isFirstContent = false;
   }
+  return out.join('\n');
+}
 
-  flushAll();
-  html += Components.signature();
-  return html;
+/**
+ * 渲染纯文本：转为 Markdown 再用 renderMarkdown 渲染
+ */
+function renderPlainText(content) {
+  if (!content || !content.trim()) return '';
+  return renderMarkdown(smartConvertTextToMarkdown(content));
 }
 
 function escapeHtml(str) {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 }
 
 /**
  * 渲染 HTML 输入（清洗）
  */
 function renderHtmlContent(content) {
-  let cleaned = content
+  return content
     .replace(/<script[\s\S]*?<\/script>/gi, '')
     .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
+    .replace(/<object[\s\S]*?<\/object>/gi, '')
+    .replace(/<embed[^>]*>/gi, '')
+    .replace(/<form[\s\S]*?<\/form>/gi, '')
+    .replace(/\son\w+="[^"]*"/gi, '')
+    .replace(/href="javascript:[^"]*"/gi, '')
     .replace(/class="[^"]*"/gi, '')
     .replace(/id="[^"]*"/gi, '');
-  return cleaned;
 }
 
 /**
