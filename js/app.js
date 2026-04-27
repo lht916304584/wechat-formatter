@@ -1134,6 +1134,349 @@
     });
   }
 
+  // ===== AI 文案生成 =====
+  const aiWriterModal = document.getElementById('aiWriterModal');
+  const aiChatMessages = document.getElementById('aiChatMessages');
+  const aiChatInput = document.getElementById('aiChatInput');
+  const btnAiSend = document.getElementById('btnAiSend');
+  const btnAiInsert = document.getElementById('btnAiInsert');
+  const btnAiNewTopic = document.getElementById('btnAiNewTopic');
+  const aiApiKeyInput = document.getElementById('aiApiKey');
+  const aiModelSelect = document.getElementById('aiModel');
+  const aiConfigStatus = document.getElementById('aiConfigStatus');
+
+  let aiConversation = [];
+  let aiPhase = 'idle';
+  let aiGeneratedContent = '';
+  let aiAbortController = null;
+  let aiStreamingBubble = null;
+
+  const AI_SYSTEM_OUTLINE = `你是微信公众号文章结构专家。用户会描述想写的文章话题，请生成一个清晰的文章大纲。
+要求：
+- 使用 Markdown 格式，用 ## 作为节标题
+- 包含 3-5 个主要章节，每节下用要点说明内容方向
+- 输出大纲而非完整文章
+- 开头第一行用 # 加文章标题
+- 大纲简洁明了，便于用户确认后展开`;
+
+  const AI_SYSTEM_GENERATE = `你是一位优秀的微信公众号文章作者。请根据用户确认的大纲，撰写一篇完整的微信公众号文章。
+要求：
+- 使用 Markdown 格式
+- 用 ## 作为章节标题（第一个 # 作为文章总标题）
+- 适当使用 > 引用块作为金句或重点提示
+- 使用 - 无序列表和 1. 有序列表增强可读性
+- 使用 **加粗** 突出关键词
+- 适当使用 | 表格进行对比
+- 文风亲切自然，适合移动端阅读
+- 每个章节 150-300 字
+- 严格按大纲结构展开`;
+
+  function getAiConfig() {
+    try {
+      return JSON.parse(localStorage.getItem('ai-writer-config') || '{}');
+    } catch { return {}; }
+  }
+  function setAiConfig(cfg) {
+    localStorage.setItem('ai-writer-config', JSON.stringify(cfg));
+  }
+
+  function loadAiConfig() {
+    const cfg = getAiConfig();
+    if (cfg.apiKey) aiApiKeyInput.value = cfg.apiKey;
+    if (cfg.model) aiModelSelect.value = cfg.model;
+    updateAiConfigStatus();
+  }
+
+  function updateAiConfigStatus() {
+    const cfg = getAiConfig();
+    if (cfg.apiKey) {
+      aiConfigStatus.textContent = 'API Key 已配置（模型：' + (cfg.model || 'glm-4-flash') + '）';
+      aiConfigStatus.className = 'ai-config-status ok';
+    } else {
+      aiConfigStatus.textContent = '请先配置 API Key 才能使用';
+      aiConfigStatus.className = 'ai-config-status error';
+    }
+  }
+
+  function addAiMessage(role, content, actions) {
+    const div = document.createElement('div');
+    div.className = 'ai-msg ai-msg-' + role;
+    if (role === 'ai') {
+      div.textContent = content;
+    } else {
+      div.textContent = content;
+    }
+    if (actions && actions.length) {
+      const actionsDiv = document.createElement('div');
+      actionsDiv.className = 'ai-msg-actions';
+      actions.forEach(a => {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-primary btn-small';
+        btn.textContent = a.label;
+        btn.addEventListener('click', a.handler);
+        actionsDiv.appendChild(btn);
+      });
+      div.appendChild(actionsDiv);
+    }
+    aiChatMessages.appendChild(div);
+    aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+    return div;
+  }
+
+  function addAiTyping() {
+    const div = document.createElement('div');
+    div.className = 'ai-msg ai-msg-ai ai-typing-wrap';
+    div.innerHTML = '<span class="ai-typing"><span></span><span></span><span></span></span>';
+    aiChatMessages.appendChild(div);
+    aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+    return div;
+  }
+
+  function removeAiTyping() {
+    const el = aiChatMessages.querySelector('.ai-typing-wrap');
+    if (el) el.remove();
+  }
+
+  function clearAiChat() {
+    aiConversation = [];
+    aiPhase = 'idle';
+    aiGeneratedContent = '';
+    aiAbortController = null;
+    aiStreamingBubble = null;
+    btnAiInsert.disabled = true;
+    aiChatMessages.innerHTML = '<div class="ai-msg ai-msg-system">描述你想写的文章话题，AI 会先生成大纲供你确认。</div>';
+  }
+
+  async function streamAiResponse(messages, onChunk, onDone, onError) {
+    const cfg = getAiConfig();
+    if (!cfg.apiKey) {
+      onError('请先在设置栏中填入 API Key');
+      return;
+    }
+    aiAbortController = new AbortController();
+    try {
+      const res = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + cfg.apiKey,
+        },
+        body: JSON.stringify({
+          model: cfg.model || 'glm-4-flash',
+          messages: messages,
+          stream: true,
+          temperature: 0.7,
+          max_tokens: 4096,
+        }),
+        signal: aiAbortController.signal,
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        if (res.status === 401 || res.status === 403) {
+          onError('API Key 无效，请检查设置');
+        } else if (res.status === 429) {
+          onError('请求过于频繁，请稍后重试');
+        } else {
+          onError(errData.error?.message || 'AI 服务错误（' + res.status + '）');
+        }
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullContent = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed === 'data: [DONE]') continue;
+          if (!trimmed.startsWith('data: ')) continue;
+          try {
+            const json = JSON.parse(trimmed.slice(6));
+            const delta = json.choices?.[0]?.delta?.content;
+            if (delta) {
+              fullContent += delta;
+              onChunk(fullContent);
+            }
+          } catch { /* skip partial JSON */ }
+        }
+      }
+      onDone(fullContent);
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        onDone(aiStreamingBubble ? aiStreamingBubble._streamedContent || '' : '');
+      } else {
+        onError('网络错误：' + err.message);
+      }
+    } finally {
+      aiAbortController = null;
+    }
+  }
+
+  function setAiStreaming(loading) {
+    btnAiSend.textContent = loading ? '停止' : '发送';
+    btnAiSend._loading = loading;
+    aiChatInput.disabled = loading;
+  }
+
+  function handleAiSend() {
+    if (btnAiSend._loading) {
+      if (aiAbortController) aiAbortController.abort();
+      setAiStreaming(false);
+      return;
+    }
+    const text = aiChatInput.value.trim();
+    if (!text) return;
+
+    const cfg = getAiConfig();
+    if (!cfg.apiKey) {
+      showToast('请先配置 API Key');
+      return;
+    }
+
+    addAiMessage('user', text);
+    aiChatInput.value = '';
+    aiChatInput.style.height = '36px';
+
+    if (aiPhase === 'idle' || aiPhase === 'outlined') {
+      // Send outline request or refinement
+      aiConversation.push({ role: 'user', content: text });
+      const sysPrompt = aiPhase === 'idle' ? AI_SYSTEM_OUTLINE : AI_SYSTEM_OUTLINE;
+      const msgs = [{ role: 'system', content: sysPrompt }, ...aiConversation];
+
+      const typing = addAiTyping();
+      setAiStreaming(true);
+
+      streamAiResponse(msgs,
+        (partial) => {
+          removeAiTyping();
+          if (!aiStreamingBubble) {
+            aiStreamingBubble = addAiMessage('ai', '', [
+              { label: '按此大纲生成文章', handler: () => handleAiConfirmOutline(aiStreamingBubble._streamedContent) },
+              { label: '继续修改', handler: () => { aiChatInput.focus(); } },
+            ]);
+          }
+          aiStreamingBubble._streamedContent = partial;
+          // Only update the text node, keep action buttons
+          const actionsEl = aiStreamingBubble.querySelector('.ai-msg-actions');
+          aiStreamingBubble.childNodes[0].textContent = partial;
+          aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+        },
+        (full) => {
+          removeAiTyping();
+          setAiStreaming(false);
+          if (full && aiStreamingBubble) {
+            aiStreamingBubble._streamedContent = full;
+            aiConversation.push({ role: 'assistant', content: full });
+          }
+          aiPhase = 'outlined';
+          aiStreamingBubble = null;
+        },
+        (err) => {
+          removeAiTyping();
+          setAiStreaming(false);
+          aiStreamingBubble = null;
+          addAiMessage('system', err);
+        }
+      );
+    }
+  }
+
+  function handleAiConfirmOutline(outlineText) {
+    if (!outlineText) return;
+    addAiMessage('system', '正在按大纲生成完整文章...');
+    aiConversation.push({ role: 'user', content: '请按以上大纲生成完整文章' });
+
+    const msgs = [{ role: 'system', content: AI_SYSTEM_GENERATE }, ...aiConversation];
+    setAiStreaming(true);
+    aiPhase = 'generating';
+
+    streamAiResponse(msgs,
+      (partial) => {
+        if (!aiStreamingBubble) {
+          aiStreamingBubble = addAiMessage('ai', '');
+        }
+        aiStreamingBubble._streamedContent = partial;
+        aiStreamingBubble.childNodes[0].textContent = partial;
+        aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+      },
+      (full) => {
+        setAiStreaming(false);
+        aiGeneratedContent = full;
+        aiPhase = 'generated';
+        aiStreamingBubble = null;
+        btnAiInsert.disabled = false;
+        addAiMessage('system', '文章已生成，点击「插入到编辑器」即可使用。');
+      },
+      (err) => {
+        setAiStreaming(false);
+        aiStreamingBubble = null;
+        addAiMessage('system', err);
+      }
+    );
+  }
+
+  function handleAiInsert() {
+    if (!aiGeneratedContent) return;
+    cm.setValue(aiGeneratedContent);
+    inputFormat.value = 'markdown';
+    updatePreview();
+    updateStats();
+    saveContent();
+    closeModal(aiWriterModal);
+    showToast('AI 文案已插入编辑器');
+  }
+
+  // AI writer event bindings
+  if (aiWriterModal) {
+    document.getElementById('btnAiWriter')?.addEventListener('click', () => {
+      loadAiConfig();
+      openModal(aiWriterModal);
+      setTimeout(() => aiChatInput.focus(), 100);
+    });
+    document.getElementById('btnCloseAiWriter')?.addEventListener('click', () => {
+      if (aiAbortController) aiAbortController.abort();
+      setAiStreaming(false);
+      closeModal(aiWriterModal);
+    });
+    aiWriterModal.addEventListener('click', (e) => {
+      if (e.target === aiWriterModal) {
+        if (aiAbortController) aiAbortController.abort();
+        setAiStreaming(false);
+        closeModal(aiWriterModal);
+      }
+    });
+    btnAiSend.addEventListener('click', handleAiSend);
+    aiChatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleAiSend();
+      }
+    });
+    aiChatInput.addEventListener('input', () => {
+      aiChatInput.style.height = '36px';
+      aiChatInput.style.height = Math.min(aiChatInput.scrollHeight, 100) + 'px';
+    });
+    btnAiInsert.addEventListener('click', handleAiInsert);
+    btnAiNewTopic.addEventListener('click', () => {
+      if (aiAbortController) aiAbortController.abort();
+      setAiStreaming(false);
+      clearAiChat();
+    });
+    document.getElementById('btnSaveAiConfig')?.addEventListener('click', () => {
+      setAiConfig({
+        apiKey: aiApiKeyInput.value.trim(),
+        model: aiModelSelect.value,
+      });
+      updateAiConfigStatus();
+      showToast('API 配置已保存');
+    });
+  }
+
   const mdToolbar = document.getElementById('mdToolbar');
   if (mdToolbar) {
     mdToolbar.addEventListener('click', (e) => {
@@ -1299,6 +1642,11 @@
     }
     if (e.key === 'Escape' && htmlModal.style.display !== 'none') {
       closeModal(htmlModal);
+    }
+    if (e.key === 'Escape' && aiWriterModal && aiWriterModal.style.display !== 'none') {
+      if (aiAbortController) aiAbortController.abort();
+      setAiStreaming(false);
+      closeModal(aiWriterModal);
     }
     if (e.key === 'Escape' && findBar && findBar.style.display !== 'none') {
       closeFindBar();
