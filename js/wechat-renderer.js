@@ -113,6 +113,12 @@ function createWechatRenderer() {
     if (/⚠️|注意|警告|WARNING/.test(plainText)) {
       return Components.calloutWarning(body);
     }
+    if (/🎉|成功|SUCCESS|DONE|完成/.test(plainText)) {
+      return Components.calloutSuccess(body);
+    }
+    if (/❌|错误|失败|ERROR|FAIL|BUG/.test(plainText)) {
+      return Components.calloutError(body);
+    }
 
     // 短引用 → quote 卡片，长引用 → callout
     if (plainText.length < 60) {
@@ -124,6 +130,18 @@ function createWechatRenderer() {
   // ===== 列表 =====
   renderer.list = function (body, ordered) {
     const items = extractTags(body, 'li');
+
+    // 检测任务列表：所有项以 [ ] 或 [x] 开头
+    const taskRegex = /^\[( |x)\]\s*/i;
+    const isTaskList = items.length > 0 && items.every(item => taskRegex.test(item));
+    if (isTaskList) {
+      const taskItems = items.map(item => {
+        const checked = /^\[x\]/i.test(item);
+        const text = item.replace(/^\[( |x)\]\s*/i, '');
+        return { checked, text };
+      });
+      return Components.taskList(taskItems);
+    }
 
     // 如果是有序列表且有 2-8 项，使用步骤卡 (W01)
     if (ordered && items.length >= 2 && items.length <= 8) {
@@ -297,6 +315,13 @@ function smartConvertTextToMarkdown(text) {
     // 无序列表：- • · 开头
     if (/^[-•·]\s/.test(trimmed)) {
       out.push('- ' + trimmed.replace(/^[-•·]\s+/, ''));
+      continue;
+    }
+
+    // 任务列表：☐ ☑ 开头
+    if (/^[☐☑]\s/.test(trimmed)) {
+      const checked = trimmed.startsWith('☑');
+      out.push((checked ? '- [x] ' : '- [ ] ') + trimmed.replace(/^[☐☑]\s+/, ''));
       continue;
     }
 

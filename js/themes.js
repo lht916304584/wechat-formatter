@@ -326,6 +326,18 @@ const Components = {
     return Style.callout('#F0FBF4', '#38A169', '#276749', '✅ TIP', content, p.textMain);
   },
 
+  // callout-success 成功框
+  calloutSuccess(content) {
+    const p = TECH_PALETTE;
+    return Style.callout('#F0FFF4', '#2F855A', '#22543D', '🎉 成功', content, p.textMain);
+  },
+
+  // callout-error 错误区
+  calloutError(content) {
+    const p = TECH_PALETTE;
+    return Style.callout('#FFF5F5', '#C53030', '#742A2A', '❌ 错误', content, p.textMain);
+  },
+
   // B08 · tag-list 标签组
   tagList(tags) {
     const p = TECH_PALETTE;
@@ -508,6 +520,25 @@ const Components = {
   },
 
   // ---------- 列表 ----------
+
+  // 任务列表 (- [ ] / - [x])
+  taskList(items) {
+    const p = TECH_PALETTE;
+    const itemsHtml = items.map(item => {
+      const checked = item.checked;
+      const icon = checked
+        ? `<div style="width:18px;height:18px;background:${p.primary};border-radius:4px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><span style="color:#fff;font-size:12px;">✓</span></div>`
+        : `<div style="width:18px;height:18px;border:2px solid ${p.border};border-radius:4px;flex-shrink:0;"></div>`;
+      const textStyle = checked
+        ? `font-size:14px;color:${p.textMute};line-height:1.8;text-decoration:line-through;`
+        : `font-size:14px;color:${p.textMain};line-height:1.8;`;
+      return `<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;">
+        ${icon}
+        <div style="${textStyle}">${item.text}</div>
+      </div>`;
+    }).join('');
+    return `<div style="margin:16px 0;padding:16px 20px;background:${p.bgLight};border-radius:8px;">${itemsHtml}</div>`;
+  },
 
   // 有序/无序列表
   list(items, ordered) {

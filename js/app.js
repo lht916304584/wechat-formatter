@@ -1620,7 +1620,11 @@
   // 键盘快捷键
   document.addEventListener('keydown', (e) => {
     if (e.ctrlKey || e.metaKey) {
-      if (e.key === 's') { e.preventDefault(); }
+      if (e.key === 's') {
+        e.preventDefault();
+        saveContent();
+        showToast('已保存');
+      }
       // 查找替换
       if (e.key === 'f') {
         e.preventDefault();
@@ -1660,7 +1664,157 @@
     if (e.key === 'Escape' && findBar && findBar.style.display !== 'none') {
       closeFindBar();
     }
+    const templateModal = document.getElementById('templateModal');
+    const shortcutsModal = document.getElementById('shortcutsModal');
+    if (e.key === 'Escape' && templateModal && templateModal.style.display !== 'none') {
+      closeModal(templateModal);
+    }
+    if (e.key === 'Escape' && shortcutsModal && shortcutsModal.style.display !== 'none') {
+      closeModal(shortcutsModal);
+    }
   });
+
+  // ===== 写作模板 =====
+  const TEMPLATES = [
+    {
+      icon: '📖',
+      name: '教程攻略',
+      desc: '分步骤教学类文章',
+      content: `# 标题：手把手教你 XXX\n\n> 📌 你将学到\n> - 知识点一\n> - 知识点二\n> - 知识点三\n\n一段引言，说明为什么这个教程有价值。\n\n## 为什么需要这个技能？\n\n背景介绍，解释学习这个技能的意义。\n\n## 准备工作\n\n开始之前需要准备的东西。\n\n- 工具一\n- 工具二\n- 基础知识\n\n## 第一步：基础操作\n\n详细讲解第一步的操作方法。\n\n## 第二步：进阶技巧\n\n在基础上进一步提升。\n\n## 第三步：实战演练\n\n通过一个实际案例巩固所学。\n\n> 💡 NOTE：这一步是关键，请仔细操作。\n\n## 常见问题\n\n| 问题 | 解决方案 |\n|------|----------|\n| 问题一 | 解决方法一 |\n| 问题二 | 解决方法二 |\n\n## 总结\n\n回顾本教程的要点，鼓励读者实践。\n\n> 好的教程不是让你看完，而是让你动手做 —— 某位导师\n`,
+    },
+    {
+      icon: '🔍',
+      name: '产品测评',
+      desc: '产品对比与评测',
+      content: `# 标题：XXX 深度测评\n\n> 📌 你将学到\n> - 产品的核心功能\n> - 优缺点分析\n> - 是否值得购买\n\n一段引人入胜的开场，说明为什么测评这个产品。\n\n## 产品简介\n\n简单介绍产品的背景和定位。\n\n## 核心功能\n\n### 功能一\n\n功能描述和体验。\n\n### 功能二\n\n功能描述和体验。\n\n### 功能三\n\n功能描述和体验。\n\n## 参数对比\n\n| 参数 | 本产品 | 竞品 A | 竞品 B |\n|------|--------|--------|--------|\n| 价格 | ¥xxx | ¥xxx | ¥xxx |\n| 性能 | 优秀 | 良好 | 一般 |\n| 易用性 | 简单 | 中等 | 复杂 |\n\n## 前后对比\n\n| 之前 | 之后 |\n|------|------|\n| 使用旧方案的体验 | 使用本产品的体验 |\n\n## 优点与不足\n\n**优点：**\n\n- 优点一\n- 优点二\n- 优点三\n\n**不足：**\n\n- 不足一\n- 不足二\n\n> ✅ TIP：如果你是 XX 类型的用户，这款产品非常适合你。\n\n## 总结\n\n综合评价和购买建议。\n`,
+    },
+    {
+      icon: '📝',
+      name: '读书笔记',
+      desc: '书籍阅读总结',
+      content: `# 标题：《XXX》读书笔记\n\n一句话推荐这本书。\n\n## 基本信息\n\n- 书名：《XXX》\n- 作者：XXX\n- 类型：XXX\n- 推荐指数：★★★★☆\n\n## 这本书讲了什么？\n\n简要概述全书的核心观点。\n\n## 核心观点\n\n### 观点一：标题\n\n作者的主要论点和你的思考。\n\n> 原文金句引用 —— 作者名\n\n### 观点二：标题\n\n作者的主要论点和你的思考。\n\n### 观点三：标题\n\n作者的主要论点和你的思考。\n\n## 最触动我的 3 句话\n\n1. 「第一句金句」\n2. 「第二句金句」\n3. 「第三句金句」\n\n## 我的思考\n\n结合自身经历，谈谈这本书给你带来的启发。\n\n## 行动清单\n\n- [ ] 行动一\n- [ ] 行动二\n- [ ] 行动三\n\n## 推荐理由\n\n总结为什么推荐（或不推荐）这本书。\n\n> 读书不是为了记住，而是为了改变 —— 某位智者\n`,
+    },
+    {
+      icon: '🍳',
+      name: '美食探店',
+      desc: '餐厅或美食体验',
+      content: `# 标题：探店 XXX\n\n一句话引出今天的探店主题。\n\n## 基本信息\n\n- 店名：XXX\n- 地址：XXX\n- 人均：¥XX\n- 推荐指数：★★★★☆\n\n## 环境氛围\n\n描述餐厅的装修风格和氛围。\n\n## 菜品点评\n\n### 招牌菜一：菜名\n\n口感、味道、摆盘的详细描述。\n\n> 💡 NOTE：这道菜是必点，不会踩雷。\n\n### 招牌菜二：菜名\n\n口感、味道、摆盘的详细描述。\n\n### 招牌菜三：菜名\n\n口感、味道、摆盘的详细描述。\n\n## 菜品评分\n\n| 菜品 | 味道 | 卖相 | 性价比 |\n|------|------|------|--------|\n| 菜品一 | ★★★★★ | ★★★★ | ★★★★ |\n| 菜品二 | ★★★★ | ★★★★★ | ★★★ |\n| 菜品三 | ★★★ | ★★★★ | ★★★★★ |\n\n## 前后对比\n\n| 之前 | 之后 |\n|------|------|\n| 期待但不确定 | 实际体验感受 |\n\n## 总结\n\n综合评价和推荐建议。\n\n> 好的餐厅不只是吃饭，更是一种体验 —— 美食家\n`,
+    },
+    {
+      icon: '💼',
+      name: '职场经验',
+      desc: '职场成长与分享',
+      content: `# 标题：工作 X 年，我学到的 X 条经验\n\n一段引发共鸣的开场白。\n\n## 背景\n\n简单介绍自己的职场经历。\n\n## 经验一：标题\n\n详细讲述这条经验背后的故事和教训。\n\n> ✅ TIP：这里有一个实用的建议。\n\n## 经验二：标题\n\n详细讲述这条经验背后的故事和教训。\n\n> 💡 NOTE：这个道理我花了很久才明白。\n\n## 经验三：标题\n\n详细讲述这条经验背后的故事和教训。\n\n## 常见误区\n\n| 误区 | 正确做法 |\n|------|----------|\n| 误区一 | 正确做法一 |\n| 误区二 | 正确做法二 |\n| 误区三 | 正确做法三 |\n\n## 我的行动清单\n\n1. 行动一\n2. 行动二\n3. 行动三\n\n## 写在最后\n\n鼓励读者的话。\n\n> 成长不是一蹴而就的，但每一步都算数 —— 某位前辈\n`,
+    },
+    {
+      icon: '🎯',
+      name: '方法论',
+      desc: '通用方法论分享',
+      content: `# 标题：XXX 方法论\n\n> 📌 你将学到\n> - 方法的核心原理\n> - 具体实施步骤\n> - 实际应用案例\n\n一段引发读者兴趣的开场。\n\n## 什么是 XXX 方法？\n\n简要介绍方法的来源和定义。\n\n## 为什么有效？\n\n解释方法背后的原理。\n\n## 三步实施法\n\n1. **第一步：准备** — 描述需要做什么\n2. **第二步：执行** — 描述核心操作\n3. **第三步：复盘** — 描述如何总结\n\n## 实战案例\n\n通过一个具体例子展示方法的应用。\n\n> ⚠️ 注意：避免常见的错误做法。\n\n## 前后对比\n\n| 之前 | 之后 |\n|------|------|\n| 使用方法前的状态 | 使用方法后的效果 |\n\n## 适用场景\n\n- 场景一\n- 场景二\n- 场景三\n\n## 总结\n\n> 方法不在多，在于坚持用 —— 某位专家\n`,
+    },
+    {
+      icon: '📰',
+      name: '新闻评论',
+      desc: '热点事件评论',
+      content: `# 标题：关于 XXX 事件，我是这样看的\n\n一段简短有力的观点。\n\n## 事件回顾\n\n客观描述事件的来龙去脉。\n\n## 各方观点\n\n### 观点 A\n\n描述第一种主流观点。\n\n### 观点 B\n\n描述第二种主流观点。\n\n### 观点 C\n\n描述第三种主流观点。\n\n## 我的分析\n\n### 核心问题\n\n这个事件的核心矛盾是什么。\n\n### 深层原因\n\n表象背后的深层原因。\n\n## 数据支撑\n\n| 指标 | 数据 |\n|------|------|\n| 数据一 | XX% |\n| 数据二 | XX% |\n\n## 我的观点\n\n清晰表达自己的立场和理由。\n\n> 观点金句 —— 作者\n\n## 延伸思考\n\n从这件事想到的更深层的问题。\n\n## 写在最后\n\n给读者的建议或反思。\n`,
+    },
+    {
+      icon: '🏋️',
+      name: '生活方式',
+      desc: '生活分享与感悟',
+      content: `# 标题：关于 XXX 的一点感悟\n\n一段温柔的开场白。\n\n## 缘起\n\n是什么触发了这次思考。\n\n## 过程\n\n详细描述经历或感受。\n\n### 阶段一\n\n最初的感受和想法。\n\n### 阶段二\n\n中间的变化和发现。\n\n### 阶段三\n\n最终的感悟。\n\n## 我的改变\n\n1. 改变一：描述具体的改变\n2. 改变二：描述具体的改变\n3. 改变三：描述具体的改变\n\n> ✅ TIP：一个小建议。\n\n## 前后对比\n\n| 之前 | 之后 |\n|------|------|\n| 改变前的状态 | 改变后的状态 |\n\n## 写在最后\n\n> 生活不是等待暴风雨过去，而是学会在雨中跳舞 —— 佚名\n`,
+    },
+    {
+      icon: '🔧',
+      name: '技术科普',
+      desc: '技术概念通俗解读',
+      content: `# 标题：一文读懂 XXX\n\n> 📌 你将学到\n> - 概念的核心定义\n> - 工作原理\n> - 实际应用\n\n用一句话解释这个技术概念。\n\n## 什么是 XXX？\n\n用最通俗的语言解释这个概念。\n\n## 它是怎么工作的？\n\n用比喻和例子解释原理。\n\n1. **步骤一：输入** — 数据或信息如何进入\n2. **步骤二：处理** — 核心处理逻辑\n3. **步骤三：输出** — 最终结果\n\n## 有什么用？\n\n### 应用场景一\n\n具体的应用案例。\n\n### 应用场景二\n\n具体的应用案例。\n\n## 代码示例\n\n\`\`\`python\n# 一个简单的代码示例\ndef example():\n    print("Hello, World!")\n\`\`\`\n\n> 💡 NOTE：如果看不懂代码也没关系，理解概念就好。\n\n## 常见误解\n\n| 误解 | 真相 |\n|------|------|\n| 误解一 | 正确理解一 |\n| 误解二 | 正确理解二 |\n\n## 总结\n\n> 技术的本质是让复杂的事情变简单 —— 某位工程师\n`,
+    },
+    {
+      icon: '💡',
+      name: '观点输出',
+      desc: '个人观点和见解',
+      content: `# 标题：我为什么认为 XXX\n\n开门见山亮出观点。\n\n## 核心论点\n\n清晰阐述你的主要观点。\n\n## 论据一：事实\n\n用数据和事实支撑。\n\n## 论据二：逻辑\n\n从逻辑角度分析。\n\n## 论据三：案例\n\n用真实案例佐证。\n\n> 名言或金句 —— 出处\n\n## 反驳可能的质疑\n\n### 质疑一\n\n有人可能说……我的回应是……\n\n### 质疑二\n\n有人可能说……我的回应是……\n\n## 类比说明\n\n用读者熟悉的事物做类比。\n\n## 总结\n\n重申观点，号召行动。\n\n> 观点不必正确，但必须真诚 —— 佚名\n`,
+    },
+    {
+      icon: '📊',
+      name: '数据分析',
+      desc: '数据驱动型文章',
+      content: `# 标题：数据告诉你 XXX\n\n一段引人注目的数据开场。\n\n## 数据概览\n\n| 指标 | 数值 | 同比增长 |\n|------|------|----------|\n| 指标一 | XX万 | +XX% |\n| 指标二 | XX亿 | +XX% |\n| 指标三 | XX% | +XX% |\n\n## 趋势分析\n\n### 趋势一\n\n数据和解读。\n\n### 趋势二\n\n数据和解读。\n\n## 关键发现\n\n1. **发现一** — 详细解释\n2. **发现二** — 详细解释\n3. **发现三** — 详细解释\n\n> 💡 NOTE：数据来源说明。\n\n## 深层原因\n\n数据背后的原因分析。\n\n## 前后对比\n\n| 之前 | 之后 |\n|------|------|\n| 过去的状态 | 现在的状态 |\n\n## 对我们的启示\n\n- 启示一\n- 启示二\n- 启示三\n\n## 总结\n\n> 数据不会说谎，但也不会自己说话 —— 某位分析师\n`,
+    },
+    {
+      icon: '🗓️',
+      name: '年度总结',
+      desc: '年终回顾与展望',
+      content: `# 标题：2024 年度总结\n\n一段回顾性的开场。\n\n## 年度关键词\n\n用 3-5 个关键词概括这一年。\n\n## 重要时刻\n\n1. **时刻一：标题** — 简述发生了什么\n2. **时刻二：标题** — 简述发生了什么\n3. **时刻三：标题** — 简述发生了什么\n\n## 数据回顾\n\n| 维度 | 目标 | 实际 |\n|------|------|------|\n| 维度一 | XX | XX |\n| 维度二 | XX | XX |\n| 维度三 | XX | XX |\n\n## 最大的收获\n\n详细讲述这一年最大的收获。\n\n## 最大的遗憾\n\n坦诚面对不足。\n\n> ⚠️ 注意：这是我需要改进的地方。\n\n## 学到的三件事\n\n- 第一个教训\n- 第二个教训\n- 第三个教训\n\n## 明年的计划\n\n- [ ] 目标一\n- [ ] 目标二\n- [ ] 目标三\n- [ ] 目标四\n\n## 写在最后\n\n> 过去无法改变，未来值得期待 —— 佚名\n`,
+    },
+  ];
+
+  // 模板弹窗
+  const templateModal = document.getElementById('templateModal');
+  const templateGrid = document.getElementById('templateGrid');
+  if (templateModal && templateGrid) {
+    // 渲染模板网格
+    templateGrid.innerHTML = TEMPLATES.map((t, i) => `
+      <div class="template-card" data-template="${i}">
+        <div class="template-card-icon">${t.icon}</div>
+        <div class="template-card-name">${t.name}</div>
+        <div class="template-card-desc">${t.desc}</div>
+      </div>
+    `).join('');
+
+    document.getElementById('btnTemplates')?.addEventListener('click', () => {
+      openModal(templateModal);
+    });
+    document.getElementById('btnCloseTemplate')?.addEventListener('click', () => {
+      closeModal(templateModal);
+    });
+    templateModal.addEventListener('click', (e) => {
+      if (e.target === templateModal) closeModal(templateModal);
+    });
+    templateGrid.addEventListener('click', (e) => {
+      const card = e.target.closest('.template-card');
+      if (!card) return;
+      const idx = parseInt(card.dataset.template, 10);
+      if (TEMPLATES[idx]) {
+        if (cm.getValue().trim() && !confirm('使用模板将覆盖当前内容，确定吗？')) return;
+        cm.setValue(TEMPLATES[idx].content);
+        inputFormat.value = 'markdown';
+        updatePreview();
+        updateStats();
+        saveContent();
+        closeModal(templateModal);
+        showToast('已加载模板：' + TEMPLATES[idx].name);
+        cm.focus();
+      }
+    });
+  }
+
+  // ===== 快捷键弹窗 =====
+  const shortcutsModal = document.getElementById('shortcutsModal');
+  if (shortcutsModal) {
+    document.getElementById('btnShortcuts')?.addEventListener('click', () => {
+      openModal(shortcutsModal);
+    });
+    document.getElementById('btnCloseShortcuts')?.addEventListener('click', () => {
+      closeModal(shortcutsModal);
+    });
+    shortcutsModal.addEventListener('click', (e) => {
+      if (e.target === shortcutsModal) closeModal(shortcutsModal);
+    });
+  }
+
+  // ===== 导出 PDF =====
+  const btnExportPdf = document.getElementById('btnExportPdf');
+  if (btnExportPdf) {
+    btnExportPdf.addEventListener('click', () => {
+      if (!currentHtml) {
+        showToast('请先输入内容');
+        return;
+      }
+      window.print();
+    });
+  }
 
   // ===== 初始加载 =====
   if (!loadContent()) {

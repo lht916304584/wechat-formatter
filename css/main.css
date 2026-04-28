@@ -968,3 +968,100 @@ body {
   }
   .toolbar-left { flex-wrap: wrap; }
 }
+
+/* ===== Template Grid ===== */
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.template-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 14px;
+  cursor: pointer;
+  transition: all var(--transition);
+  background: var(--surface-raised);
+  text-align: center;
+}
+.template-card:hover {
+  border-color: var(--primary);
+  background: var(--primary-light);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
+.template-card-icon {
+  font-size: 28px;
+  margin-bottom: 8px;
+}
+.template-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.template-card-desc {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
+/* ===== Shortcut List ===== */
+.shortcut-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.shortcut-item span {
+  margin-left: auto;
+  color: var(--text);
+  font-weight: 500;
+}
+.shortcut-item kbd {
+  display: inline-block;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-family: inherit;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  box-shadow: 0 1px 0 var(--border);
+  font-weight: 600;
+}
+
+/* ===== Print ===== */
+@media print {
+  body { background: #fff !important; }
+  .toolbar, .editor-panel, .outline-panel,
+  .modal, .toast, .drag-overlay,
+  #toast { display: none !important; }
+  .app { height: auto !important; }
+  .editor-container { padding: 0 !important; gap: 0 !important; }
+  .preview-panel {
+    flex: 1 !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+  .preview-wrapper {
+    background: #fff !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+  .preview-content {
+    max-width: 100% !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    padding: 20px !important;
+  }
+  .panel-header { display: none !important; }
+  .preview-placeholder { display: none !important; }
+}
