@@ -5,26 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>微信排版工具</title>
   <link rel="stylesheet" href="css/main.css">
-  <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/codemirror/5.65.16/codemirror.min.css">
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css" id="hljs-theme">
-  <script src="https://cdn.bootcdn.net/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
-  <script src="https://cdn.bootcdn.net/ajax/libs/codemirror/5.65.16/mode/markdown/markdown.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <!-- Monaco Editor -->
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
 </head>
 <body>
   <div class="app">
     <!-- 顶部工具栏 -->
     <header class="toolbar">
       <div class="toolbar-left">
-        <h1 class="logo">
+        <h1 class="logo"><a href="landing.html" style="color:inherit;text-decoration:none;display:flex;align-items:center;gap:10px;">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5" fill="#6366f1" stroke="none"></circle>
             <rect x="3" y="3" width="18" height="18" rx="3" ry="3"></rect>
             <line x1="3" y1="9" x2="21" y2="9"></line>
             <line x1="9" y1="21" x2="9" y2="9"></line>
           </svg>
           微信排版
-        </h1>
+        </a></h1>
         <div class="toolbar-divider"></div>
         <div class="format-selector">
           <label>格式</label>
@@ -50,90 +53,153 @@
         </div>
       </div>
       <div class="toolbar-right">
-        <button id="btnCopy" class="btn btn-primary" aria-label="复制到微信">
+        <button id="btnSave" class="btn btn-secondary" aria-label="保存">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+            <polyline points="17 21 17 13 7 13 7 21"></polyline>
+            <polyline points="7 3 7 8 15 8"></polyline>
           </svg>
-          复制到微信
+          保存
         </button>
-        <button id="btnExportHtml" class="btn btn-secondary" aria-label="导出 HTML 文件">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
-          </svg>
-          导出 HTML
-        </button>
-        <button id="btnExportPdf" class="btn btn-secondary" aria-label="导出 PDF">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-            <line x1="12" y1="18" x2="12" y2="12"></line>
-            <polyline points="9 15 12 18 15 15"></polyline>
-          </svg>
-          导出 PDF
-        </button>
-        <button id="btnViewHtml" class="btn btn-outline" aria-label="查看 HTML 源码">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="16 18 22 12 16 6"></polyline>
-            <polyline points="8 6 2 12 8 18"></polyline>
-          </svg>
-          源码
-        </button>
-        <button id="btnImportFile" class="btn btn-outline" aria-label="导入文件">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-          </svg>
-          导入文件
-        </button>
-        <button id="btnTemplates" class="btn btn-outline" aria-label="写作模板">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-            <line x1="3" y1="9" x2="21" y2="9"></line>
-            <line x1="9" y1="21" x2="9" y2="9"></line>
-          </svg>
-          写作模板
-        </button>
-        <button id="btnShortcuts" class="btn btn-outline" aria-label="快捷键">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect>
-            <line x1="6" y1="8" x2="6.01" y2="8"></line>
-            <line x1="10" y1="8" x2="10.01" y2="8"></line>
-            <line x1="14" y1="8" x2="14.01" y2="8"></line>
-            <line x1="18" y1="8" x2="18.01" y2="8"></line>
-            <line x1="8" y1="12" x2="16" y2="12"></line>
-          </svg>
-          快捷键
-        </button>
-        <button id="btnHistory" class="btn btn-outline" aria-label="历史版本">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="1 4 1 10 7 10"></polyline>
-            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
-          </svg>
-          历史版本
-        </button>
-        <button id="btnAiWriter" class="btn btn-outline" title="AI 文案生成">
+        <button id="btnAiWriterToolbar" class="btn btn-secondary" aria-label="AI 助手">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z"></path>
           </svg>
-          AI 文案
+          AI 助手
         </button>
-        <button id="btnImageBed" class="btn btn-outline" title="图床设置">
+        <button id="btnPublish" class="btn btn-primary" aria-label="发布">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-            <circle cx="8.5" cy="8.5" r="1.5"></circle>
-            <polyline points="21 15 16 10 5 21"></polyline>
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
           </svg>
-          图床设置
+          发布
         </button>
+        <div class="toolbar-more-wrap">
+          <button id="btnMore" class="btn btn-outline" aria-label="更多" style="padding:7px 10px">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="1"></circle>
+              <circle cx="19" cy="12" r="1"></circle>
+              <circle cx="5" cy="12" r="1"></circle>
+            </svg>
+          </button>
+          <div class="toolbar-dropdown" id="toolbarDropdown" style="display:none">
+            <div class="toolbar-dropdown-item" data-action="new-doc">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+              <span>新建文档</span>
+              <kbd class="toolbar-kbd">Ctrl+N</kbd>
+            </div>
+            <div class="toolbar-dropdown-sep"></div>
+            <div class="toolbar-dropdown-item" data-action="undo">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+              <span>撤销</span>
+              <kbd class="toolbar-kbd">Ctrl+Z</kbd>
+            </div>
+            <div class="toolbar-dropdown-item" data-action="redo">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+              <span>重做</span>
+              <kbd class="toolbar-kbd">Ctrl+Shift+Z</kbd>
+            </div>
+            <div class="toolbar-dropdown-sep"></div>
+            <div class="toolbar-dropdown-item" data-action="import">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+              <span>导入文档</span>
+            </div>
+            <div class="toolbar-dropdown-item" data-action="export-html">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              <span>导出 HTML</span>
+            </div>
+            <div class="toolbar-dropdown-item" data-action="export-pdf">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+              <span>导出 PDF</span>
+            </div>
+            <div class="toolbar-dropdown-sep"></div>
+            <div class="toolbar-dropdown-item" data-action="toggle-theme">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+              <span id="themeMenuLabel">切换到浅色模式</span>
+            </div>
+            <div class="toolbar-dropdown-item" data-action="fullscreen">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+              <span>全屏模式</span>
+              <kbd class="toolbar-kbd">F11</kbd>
+            </div>
+            <div class="toolbar-dropdown-sep"></div>
+            <div class="toolbar-dropdown-item" data-action="templates">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+              <span>写作模板</span>
+            </div>
+            <div class="toolbar-dropdown-item" data-action="history">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+              <span>历史版本</span>
+            </div>
+            <div class="toolbar-dropdown-item" data-action="image-bed">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+              <span>图床设置</span>
+            </div>
+            <div class="toolbar-dropdown-item" data-action="cloud-sync">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>
+              <span>云端同步</span>
+            </div>
+            <div class="toolbar-dropdown-sep"></div>
+            <div class="toolbar-dropdown-item" data-action="settings">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+              <span>设置</span>
+            </div>
+            <div class="toolbar-dropdown-item" data-action="shortcuts">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect><line x1="6" y1="8" x2="6.01" y2="8"></line><line x1="10" y1="8" x2="10.01" y2="8"></line><line x1="14" y1="8" x2="14.01" y2="8"></line><line x1="18" y1="8" x2="18.01" y2="8"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+              <span>快捷键</span>
+            </div>
+          </div>
+        </div>
         <input type="file" id="fileInput" accept=".md,.markdown,.txt,.html,.htm" style="display:none">
       </div>
     </header>
 
+    <!-- 菜单栏 -->
+    <div class="menu-bar" id="menuBar">
+      <div class="menu-item" data-menu="file">文件</div>
+      <div class="menu-item" data-menu="edit">编辑</div>
+      <div class="menu-item" data-menu="insert">插入</div>
+      <div class="menu-item" data-menu="view">视图</div>
+      <div class="menu-item" data-menu="help">帮助</div>
+    </div>
+
     <!-- 主体区域 -->
     <main class="editor-container">
+      <!-- 左侧活动栏 -->
+      <div class="activity-bar" id="activityBar">
+        <button class="activity-btn active" data-tab="articles" title="文章管理">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+        </button>
+        <button class="activity-btn" data-tab="templates" title="写作模板">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+        </button>
+        <button class="activity-btn" data-tab="outline" title="文章大纲">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+        </button>
+        <button class="activity-btn" data-tab="history" title="历史版本">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+        </button>
+        <button class="activity-btn" data-tab="images" title="图片管理">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+        </button>
+        <button class="activity-btn" data-tab="styles" title="样式编辑">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="2.5"></circle><path d="M17.5 10.5l2-2a2.83 2.83 0 1 0-4-4l-2 2"></path><path d="M14.5 7.5l-9 9"></path><path d="M3 21l3-3"></path></svg>
+        </button>
+        <div class="activity-bar-spacer"></div>
+        <button class="activity-btn" data-tab="settings" title="设置">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        </button>
+      </div>
+
+      <!-- 侧边面板 -->
+      <div class="side-panel" id="sidePanel">
+        <div class="side-panel-header">
+          <span class="side-panel-title" id="sidePanelTitle">文章管理</span>
+          <button class="side-panel-close" id="btnCloseSidePanel" title="关闭侧边栏">&times;</button>
+        </div>
+        <div class="side-panel-content" id="sidePanelContent"></div>
+      </div>
+
       <!-- 左侧：编辑区 -->
       <div class="editor-panel">
         <div class="panel-header">
@@ -197,7 +263,7 @@
           <button id="btnReplaceAll" title="全部替换">全部</button>
           <button id="btnCloseFind" title="关闭">✕</button>
         </div>
-        <textarea id="editor" spellcheck="false" placeholder="在此粘贴或输入文章内容...&#10;&#10;支持 Markdown 语法，实时预览排版效果。"></textarea>
+        <div id="monaco-editor" style="flex:1;min-height:0;"></div>
         <div class="drag-overlay" id="dragOverlay" style="display:none">
           <div class="drag-overlay-content">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -241,22 +307,18 @@
               </svg>
               大纲
             </button>
-            <div class="device-toggle" id="deviceToggle">
-              <button id="btnMobilePreview" class="btn-small active" title="手机预览模式">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
-                  <line x1="12" y1="18" x2="12.01" y2="18"></line>
-                </svg>
-                手机
-              </button>
-              <button id="btnDesktopPreview" class="btn-small" title="桌面预览模式">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                  <line x1="8" y1="21" x2="16" y2="21"></line>
-                  <line x1="12" y1="17" x2="12" y2="21"></line>
-                </svg>
-                桌面
-              </button>
+            <div class="device-selector" id="deviceSelector">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.5">
+                <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+                <line x1="12" y1="18" x2="12.01" y2="18"></line>
+              </svg>
+              <select id="deviceSelect">
+                <option value="375">iPhone SE</option>
+                <option value="390">iPhone 14</option>
+                <option value="430">iPhone 14 Pro Max</option>
+                <option value="744">iPad Mini</option>
+                <option value="desktop">桌面端</option>
+              </select>
             </div>
           </div>
         </div>
@@ -340,44 +402,144 @@
     </div>
   </div>
 
-  <!-- AI 文案生成弹窗 -->
-  <div id="aiWriterModal" class="modal" role="dialog" aria-label="AI 文案生成" style="display:none">
+  <!-- AI 助手弹窗 -->
+  <div id="aiWriterModal" class="modal" role="dialog" aria-label="AI 助手" style="display:none">
     <div class="modal-content ai-modal-content">
       <div class="modal-header">
         <div class="modal-title">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z"></path>
           </svg>
-          AI 文案生成
+          AI 助手
         </div>
         <button class="modal-close" id="btnCloseAiWriter"></button>
       </div>
 
-      <!-- API 设置栏 -->
-      <div class="ai-settings" id="aiSettings">
-        <div class="ai-settings-row">
-          <input type="text" id="aiApiUrl" placeholder="API 地址（如 https://open.bigmodel.cn/api/paas/v4/chat/completions）" autocomplete="off">
-        </div>
-        <div class="ai-settings-row">
-          <input type="password" id="aiApiKey" placeholder="API Key" autocomplete="off">
-          <input type="text" id="aiModel" placeholder="模型名称（如 gpt-4o、glm-4-flash）">
-          <button id="btnSaveAiConfig" class="btn btn-small">保存</button>
-        </div>
-        <div id="aiConfigStatus" class="ai-config-status"></div>
+      <!-- 标签栏 -->
+      <div class="ai-tabs">
+        <button class="ai-tab active" data-aitab="assistant">AI 助手</button>
+        <button class="ai-tab" data-aitab="settings">设置</button>
       </div>
 
-      <!-- 聊天区域 -->
-      <div class="ai-chat-messages" id="aiChatMessages">
-        <div class="ai-msg ai-msg-system">描述你想写的文章话题，AI 会先生成大纲供你确认。</div>
+      <!-- ===== AI 助手 Tab ===== -->
+      <div class="ai-tab-pane" id="aiPaneAssistant">
+        <!-- 未配置提示横幅 -->
+        <div class="ai-error-banner" id="aiErrorBanner" style="display:none">
+          <span>AI 功能尚未启用。请先在「设置」中配置 API 密钥。</span>
+          <button class="ai-error-btn" id="aiGoSettings">去设置</button>
+        </div>
+
+        <!-- 功能卡片 (2×4) -->
+        <div class="ai-func-grid" id="aiFuncGrid">
+          <div class="ai-func-card" data-func="article">
+            <span class="ai-func-icon">✍️</span>
+            <span class="ai-func-label">生成文章</span>
+          </div>
+          <div class="ai-func-card" data-func="polish">
+            <span class="ai-func-icon">✨</span>
+            <span class="ai-func-label">润色文章</span>
+          </div>
+          <div class="ai-func-card" data-func="continue">
+            <span class="ai-func-icon">📝</span>
+            <span class="ai-func-label">续写文章</span>
+          </div>
+          <div class="ai-func-card" data-func="css">
+            <span class="ai-func-icon">🎨</span>
+            <span class="ai-func-label">生成CSS</span>
+          </div>
+          <div class="ai-func-card" data-func="translate">
+            <span class="ai-func-icon">🌐</span>
+            <span class="ai-func-label">翻译内容</span>
+          </div>
+          <div class="ai-func-card" data-func="summary">
+            <span class="ai-func-icon">📋</span>
+            <span class="ai-func-label">生成摘要</span>
+          </div>
+          <div class="ai-func-card" data-func="explain">
+            <span class="ai-func-icon">💡</span>
+            <span class="ai-func-label">解释说明</span>
+          </div>
+          <div class="ai-func-card" data-func="cover">
+            <span class="ai-func-icon">🖼️</span>
+            <span class="ai-func-label">生成封面</span>
+          </div>
+        </div>
+
+        <!-- 流式输出开关 -->
+        <div class="ai-stream-row">
+          <label class="ai-stream-label">流式输出（实时显示）</label>
+          <label class="ai-switch"><input type="checkbox" id="aiStreamToggle" checked><span class="ai-switch-slider"></span></label>
+        </div>
+
+        <!-- 聊天区域 -->
+        <div class="ai-chat-messages" id="aiChatMessages"></div>
+
+        <!-- 底部输入区 -->
+        <div class="ai-chat-footer">
+          <textarea id="aiChatInput" rows="1" placeholder="描述你想写的文章话题..."></textarea>
+          <div class="ai-chat-actions">
+            <button id="btnAiSend" class="btn btn-primary btn-small">发送</button>
+            <button id="btnAiStop" class="btn btn-secondary btn-small" style="display:none">停止</button>
+            <button id="btnAiInsert" class="btn btn-secondary btn-small" disabled>插入到编辑器</button>
+            <button id="btnAiNewTopic" class="btn btn-outline btn-small">新话题</button>
+          </div>
+        </div>
       </div>
 
-      <!-- 底部输入区 -->
-      <div class="ai-chat-footer">
-        <textarea id="aiChatInput" rows="1" placeholder="描述你想写的文章话题..."></textarea>
-        <div class="ai-chat-actions">
-          <button id="btnAiSend" class="btn btn-primary btn-small">发送</button>
-          <button id="btnAiInsert" class="btn btn-secondary btn-small" disabled>插入到编辑器</button>
-          <button id="btnAiNewTopic" class="btn btn-outline btn-small">新话题</button>
+      <!-- ===== 设置 Tab ===== -->
+      <div class="ai-tab-pane" id="aiPaneSettings" style="display:none">
+        <div class="ai-settings-body">
+          <div class="ai-setting-item">
+            <label class="ai-setting-label">启用 AI 功能</label>
+            <label class="ai-switch"><input type="checkbox" id="aiEnable" checked><span class="ai-switch-slider"></span></label>
+          </div>
+          <div class="ai-setting-item">
+            <label class="ai-setting-label">服务提供商</label>
+            <select class="ai-setting-select" id="aiProvider">
+              <option value="custom">自定义</option>
+              <option value="siliconflow">SiliconFlow（免费额度）</option>
+              <option value="zhipu">智谱 AI</option>
+              <option value="openai">OpenAI</option>
+              <option value="deepseek">DeepSeek</option>
+            </select>
+          </div>
+          <div class="ai-setting-item">
+            <label class="ai-setting-label">API 地址</label>
+            <input class="ai-setting-input" type="text" id="aiApiUrl" placeholder="https://open.bigmodel.cn/api/paas/v4/chat/completions" autocomplete="off">
+          </div>
+          <div class="ai-setting-item">
+            <label class="ai-setting-label">API Key</label>
+            <input class="ai-setting-input" type="password" id="aiApiKey" placeholder="输入你的 API Key" autocomplete="off">
+          </div>
+          <div class="ai-setting-item">
+            <label class="ai-setting-label">模型</label>
+            <select class="ai-setting-select" id="aiModelSelect">
+              <option value="glm-4-flash">GLM-4-Flash</option>
+              <option value="glm-4-plus">GLM-4-Plus</option>
+              <option value="glm-4">GLM-4</option>
+              <option value="gpt-4o-mini">GPT-4o-mini</option>
+              <option value="gpt-4o">GPT-4o</option>
+              <option value="deepseek-chat">DeepSeek-Chat</option>
+              <option value="Qwen/Qwen2.5-72B-Instruct">Qwen2.5-72B</option>
+              <option value="custom">自定义模型...</option>
+            </select>
+          </div>
+          <div class="ai-setting-item" id="aiCustomModelRow" style="display:none">
+            <label class="ai-setting-label">自定义模型名</label>
+            <input class="ai-setting-input" type="text" id="aiCustomModel" placeholder="模型名称">
+          </div>
+          <div class="ai-setting-item ai-setting-range-wrap">
+            <label class="ai-setting-label">Temperature <span id="aiTempValue">0.7</span></label>
+            <input class="ai-setting-range" type="range" id="aiTemperature" min="0" max="1" step="0.1" value="0.7">
+          </div>
+          <div class="ai-setting-item ai-setting-range-wrap">
+            <label class="ai-setting-label">Max Tokens <span id="aiMaxTokensValue">4096</span></label>
+            <input class="ai-setting-range" type="range" id="aiMaxTokens" min="256" max="8192" step="256" value="4096">
+          </div>
+          <div class="ai-settings-footer">
+            <div id="aiConfigStatus" class="ai-config-status"></div>
+            <button id="btnSaveAiConfig" class="btn btn-primary btn-small">保存配置</button>
+          </div>
         </div>
       </div>
     </div>
@@ -477,6 +639,295 @@
   <!-- Toast 提示 -->
   <div id="toast" class="toast" style="display:none"></div>
 
+  <!-- 发布弹窗 -->
+  <div id="publishModal" class="modal" role="dialog" aria-label="发布文章" style="display:none">
+    <div class="modal-content" style="max-width:560px">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+          发布文章
+        </div>
+        <button class="modal-close" id="btnClosePublish"></button>
+      </div>
+      <div class="publish-tabs">
+        <button class="publish-tab active" data-pubtab="wechat">复制到公众号</button>
+        <button class="publish-tab" data-pubtab="export">导出文件</button>
+      </div>
+      <!-- 复制到公众号 -->
+      <div class="publish-pane" id="publishPaneWechat">
+        <h4>使用说明</h4>
+        <ol>
+          <li>点击下方「复制HTML」按钮</li>
+          <li>打开微信公众号后台编辑器</li>
+          <li>粘贴到编辑器中即可</li>
+        </ol>
+        <h4>预览效果</h4>
+        <div class="publish-preview-box" id="publishPreview"></div>
+        <div class="publish-actions">
+          <button id="btnPublishCopy" class="btn btn-primary">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            复制HTML
+          </button>
+        </div>
+      </div>
+      <!-- 导出文件 -->
+      <div class="publish-pane" id="publishPaneExport" style="display:none">
+        <div class="publish-export-grid">
+          <div class="publish-export-card" id="btnPublishExportHtml">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+            </svg>
+            <span>导出 HTML 文件</span>
+          </div>
+          <div class="publish-export-card" id="btnPublishExportPdf">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="12" y1="18" x2="12" y2="12"></line>
+              <polyline points="9 15 12 18 15 15"></polyline>
+            </svg>
+            <span>导出 PDF 文件</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 命令面板 -->
+  <div class="command-palette" id="commandPalette" style="display:none">
+    <div class="command-palette-backdrop" id="commandPaletteBackdrop"></div>
+    <div class="command-palette-box">
+      <input type="text" id="commandInput" placeholder="输入命令搜索..." autocomplete="off">
+      <div class="command-list" id="commandList"></div>
+    </div>
+  </div>
+
+  <!-- 菜单下拉容器 -->
+  <div class="menu-dropdown" id="menuDropdown" style="display:none">
+    <div class="menu-dropdown-inner" id="menuDropdownInner"></div>
+  </div>
+
+  <script>
+    (function() {
+      window._monacoReady = false;
+      window.editor = null;
+
+      // Monaco Editor loader configuration
+      require.config({
+        paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' }
+      });
+
+      require(['vs/editor/editor.main'], function() {
+        // Define custom dark theme matching our app
+        monaco.editor.defineTheme('weedit-dark', {
+          base: 'vs-dark',
+          inherit: true,
+          rules: [
+            { token: 'comment', foreground: '6B7280', fontStyle: 'italic' },
+            { token: 'keyword', foreground: 'C084FC' },
+            { token: 'string', foreground: '86EFAC' },
+            { token: 'number', foreground: 'FDBA74' },
+            { token: 'tag', foreground: 'FCA5A5' },
+            { token: 'attribute.name', foreground: 'FDBA74' },
+            { token: 'attribute.value', foreground: '86EFAC' },
+            { token: 'heading', foreground: '818CF8', fontStyle: 'bold' },
+            { token: 'emphasis', fontStyle: 'italic' },
+            { token: 'strong', fontStyle: 'bold' },
+          ],
+          colors: {
+            'editor.background': '#0B0D12',
+            'editor.lineHighlightBackground': '#13151C',
+            'editorLineNumber.foreground': '#374151',
+            'editorLineNumber.activeForeground': '#9CA3AF',
+            'editor.selectionBackground': 'rgba(99,102,241,0.25)',
+            'editor.inactiveSelectionBackground': 'rgba(99,102,241,0.15)',
+            'editorCursor.foreground': '#6366F1',
+            'editorWhitespace.foreground': '#1F2937',
+            'editorIndentGuide.background': '#1F2937',
+            'editorIndentGuide.activeBackground': '#374151',
+            'editorSuggestWidget.background': '#13151C',
+            'editorSuggestWidget.border': 'rgba(255,255,255,0.06)',
+            'editorSuggestWidget.selectedBackground': 'rgba(99,102,241,0.15)',
+            'editorHoverWidget.background': '#13151C',
+            'editorHoverWidget.border': 'rgba(255,255,255,0.06)',
+            ' minimap.background': '#0B0D12',
+          }
+        });
+
+        const container = document.getElementById('monaco-editor');
+        if (!container) {
+          console.error('Monaco container not found');
+          return;
+        }
+
+        // Define light theme
+        monaco.editor.defineTheme('weedit-light', {
+          base: 'vs',
+          inherit: true,
+          rules: [
+            { token: 'comment', foreground: '6B7280', fontStyle: 'italic' },
+            { token: 'keyword', foreground: '9333EA' },
+            { token: 'string', foreground: '16A34A' },
+            { token: 'number', foreground: 'D97706' },
+            { token: 'tag', foreground: 'DC2626' },
+            { token: 'attribute.name', foreground: 'D97706' },
+            { token: 'attribute.value', foreground: '16A34A' },
+            { token: 'heading', foreground: '4F46E5', fontStyle: 'bold' },
+          ],
+          colors: {
+            'editor.background': '#FAFAFA',
+            'editor.lineHighlightBackground': '#F3F4F6',
+            'editorLineNumber.foreground': '#D1D5DB',
+            'editorLineNumber.activeForeground': '#6B7280',
+            'editor.selectionBackground': 'rgba(99,102,241,0.2)',
+            'editor.inactiveSelectionBackground': 'rgba(99,102,241,0.1)',
+            'editorCursor.foreground': '#6366F1',
+            'editorWhitespace.foreground': '#E5E7EB',
+            'editorIndentGuide.background': '#E5E7EB',
+            'editorIndentGuide.activeBackground': '#D1D5DB',
+            'editorSuggestWidget.background': '#FFFFFF',
+            'editorSuggestWidget.border': 'rgba(0,0,0,0.08)',
+            'editorSuggestWidget.selectedBackground': 'rgba(99,102,241,0.12)',
+            'editorHoverWidget.background': '#FFFFFF',
+            'editorHoverWidget.border': 'rgba(0,0,0,0.08)',
+            'minimap.background': '#FAFAFA',
+          }
+        });
+
+        const savedTheme = localStorage.getItem('app-theme') || 'dark';
+        if (savedTheme === 'light') {
+          document.documentElement.dataset.theme = 'light';
+        }
+        const monacoTheme = savedTheme === 'light' ? 'weedit-light' : 'weedit-dark';
+
+        window.editor = monaco.editor.create(container, {
+          value: '',
+          language: 'markdown',
+          theme: monacoTheme,
+          fontSize: 14,
+          lineHeight: 24,
+          fontFamily: '"JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace',
+          lineNumbers: 'on',
+          wordWrap: 'on',
+          automaticLayout: true,
+          scrollBeyondLastLine: false,
+          roundedSelection: false,
+          padding: { top: 16, bottom: 16 },
+          folding: true,
+          renderLineHighlight: 'line',
+          matchBrackets: 'always',
+          quickSuggestions: false,
+          parameterHints: { enabled: false },
+          suggestOnTriggerCharacters: false,
+          hover: { enabled: true },
+          minimap: { enabled: true, scale: 1, showSlider: 'mouseover' },
+          scrollbar: {
+            vertical: 'auto',
+            horizontal: 'auto',
+            useShadows: false,
+            verticalScrollbarSize: 8,
+            horizontalScrollbarSize: 8,
+          },
+          contextmenu: false,
+          renderWhitespace: 'none',
+          tabSize: 2,
+          insertSpaces: true,
+          detectIndentation: true,
+          bracketPairColorization: { enabled: true },
+          guides: {
+            bracketPairs: true,
+            indentation: true,
+          },
+        });
+
+        // Register markdown-specific completion for headers
+        monaco.languages.registerCompletionItemProvider('markdown', {
+          triggerCharacters: ['#', '-', '*', '`', '['],
+          provideCompletionItems: function(model, position) {
+            const textBefore = model.getLineContent(position.lineNumber).substring(0, position.column - 1);
+            const suggestions = [];
+            if (textBefore.match(/^#{0,5}$/)) {
+              suggestions.push(
+                { label: 'h1', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '# ', detail: '一级标题' },
+                { label: 'h2', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '## ', detail: '二级标题' },
+                { label: 'h3', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '### ', detail: '三级标题' }
+              );
+            }
+            if (textBefore.match(/^\s*$/)) {
+              suggestions.push(
+                { label: 'codeblock', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '```\n$0\n```', detail: '代码块', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet },
+                { label: 'link', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '[$1]($2)', detail: '链接', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet },
+                { label: 'image', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '![$1]($2)', detail: '图片', insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet },
+                { label: 'table', kind: monaco.languages.CompletionItemKind.Snippet, insertText: '| 列1 | 列2 |\n| --- | --- |\n| 内容 | 内容 |', detail: '表格' }
+              );
+            }
+            return { suggestions };
+          }
+        });
+
+        window._monacoReady = true;
+        // Dispatch event so app.js knows Monaco is ready
+        document.dispatchEvent(new CustomEvent('monaco-ready'));
+      }, function(err) {
+        console.error('Monaco Editor failed to load:', err);
+        // Fallback: create a plain textarea
+        const container = document.getElementById('monaco-editor');
+        if (container) {
+          container.innerHTML = '<textarea id="editor-fallback" spellcheck="false" style="width:100%;height:100%;background:var(--surface);color:var(--text);border:none;resize:none;padding:16px;font-family:inherit;font-size:14px;line-height:1.8;outline:none;"></textarea>';
+          window.editor = {
+            getValue: function() { return document.getElementById('editor-fallback').value; },
+            setValue: function(v) { document.getElementById('editor-fallback').value = v; },
+            focus: function() { document.getElementById('editor-fallback').focus(); },
+            onDidChangeModelContent: function(cb) {
+              document.getElementById('editor-fallback').addEventListener('input', cb);
+              return { dispose: function() {} };
+            },
+            onDidScrollChange: function() { return { dispose: function() {} }; },
+            getPosition: function() { return { lineNumber: 1, column: 1 }; },
+            setPosition: function() {},
+            revealLineInCenter: function() {},
+            executeEdits: function(source, edits) {
+              const ta = document.getElementById('editor-fallback');
+              if (edits && edits[0]) {
+                const start = edits[0].range ? (edits[0].range.startLineNumber || 1) : 1;
+                const text = edits[0].text || '';
+                const val = ta.value;
+                const before = val.substring(0, ta.selectionStart);
+                const after = val.substring(ta.selectionEnd);
+                ta.value = before + text + after;
+                const pos = before.length + text.length;
+                ta.setSelectionRange(pos, pos);
+              }
+            },
+            getSelection: function() {
+              const ta = document.getElementById('editor-fallback');
+              if (!ta) return { startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 1 };
+              return { startLineNumber: 1, startColumn: ta.selectionStart + 1, endLineNumber: 1, endColumn: ta.selectionEnd + 1 };
+            },
+            setSelection: function() {},
+            getScrollHeight: function() { return 0; },
+            setScrollTop: function() {},
+            getLayoutInfo: function() { return { height: 400 }; },
+            getDomNode: function() { return document.getElementById('monaco-editor'); },
+            revealPosition: function() {},
+            trigger: function() {},
+            getModel: function() { return { getLineContent: function(n) { return ''; }, getLineCount: function() { return 1; }, getLinesContent: function() { return ['']; }, getValueInRange: function() { return ''; } }; },
+            layout: function() {},
+            addCommand: function() {},
+            addAction: function() {},
+          };
+          document.dispatchEvent(new CustomEvent('monaco-ready'));
+        }
+      });
+    })();
+  </script>
   <script src="js/themes.js"></script>
   <script src="js/wechat-renderer.js"></script>
   <script src="js/app.js"></script>

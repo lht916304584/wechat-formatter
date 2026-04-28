@@ -228,12 +228,88 @@ function renderMarkdown(content) {
     gfm: true,
   });
 
-  let html = marked.parse(content);
+  // Pre-process: extract math and mermaid blocks before marked parsing
+  const placeholders = [];
+  let processed = content;
+
+  // Extract display math ($$...$$)
+  processed = processed.replace(/\$\$([\s\S]+?)\$\$/g, (_, math) => {
+    const idx = placeholders.length;
+    placeholders.push({ type: 'math', content: math.trim(), display: true });
+    return `MATHPLACEHOLDER${idx}ENDMATH`;
+  });
+
+  // Extract inline math ($...$) — but not inside code blocks
+  processed = processed.replace(/(?<!`)\$([^\$\n]+?)\$(?!`)/g, (_, math) => {
+    const idx = placeholders.length;
+    placeholders.push({ type: 'math', content: math.trim(), display: false });
+    return `MATHPLACEHOLDER${idx}ENDMATH`;
+  });
+
+  // Extract mermaid code blocks (```mermaid ... ```)
+  processed = processed.replace(/```mermaid\n([\s\S]+?)```/g, (_, code) => {
+    const idx = placeholders.length;
+    placeholders.push({ type: 'mermaid', content: code.trim() });
+    return `MERMAIDPLACEHOLDER${idx}ENDMERMAID`;
+  });
+
+  let html = marked.parse(processed);
+
+  // Replace placeholders with rendered content
+  for (let i = 0; i < placeholders.length; i++) {
+    const p = placeholders[i];
+    if (p.type === 'math') {
+      let rendered = '';
+      if (typeof katex !== 'undefined') {
+        try {
+          rendered = katex.renderToString(p.content, {
+            displayMode: p.display,
+            throwOnError: false,
+          });
+        } catch (e) {
+          rendered = escapeHtml(p.content);
+        }
+      } else {
+        rendered = escapeHtml(p.content);
+      }
+      if (p.display) {
+        rendered = `<div style="text-align:center;margin:16px 0;overflow-x:auto;">${rendered}</div>`;
+      }
+      html = html.replace(`MATHPLACEHOLDER${i}ENDMATH`, rendered);
+    } else if (p.type === 'mermaid') {
+      const mermaidId = 'mermaid-' + Date.now() + '-' + i;
+      html = html.replace(`MERMAIDPLACEHOLDER${i}ENDMERMAID`,
+        `<div class="mermaid-placeholder" id="${mermaidId}" data-code="${escapeHtml(p.content)}" style="margin:16px 0;text-align:center;">
+          <div style="padding:20px;background:#f8f9fa;border-radius:8px;border:1px solid #e2e8f0;color:#64748b;font-size:13px;">
+            Mermaid 图表加载中...
+          </div>
+        </div>`);
+    }
+  }
 
   // 追加签名档
   html += Components.signature();
 
   return html;
+}
+
+/**
+ * 异步渲染页面中的 Mermaid 图表
+ */
+async function renderMermaidDiagrams() {
+  if (typeof mermaid === 'undefined') return;
+  mermaid.initialize({ startOnLoad: false, theme: 'default' });
+  const els = document.querySelectorAll('.mermaid-placeholder');
+  for (const el of els) {
+    const code = el.dataset.code;
+    if (!code) continue;
+    try {
+      const { svg } = await mermaid.render('mermaid-svg-' + Math.random().toString(36).slice(2), code);
+      el.innerHTML = `<div style="padding:16px;background:#f8f9fa;border-radius:8px;border:1px solid #e2e8f0;overflow-x:auto;">${svg}</div>`;
+    } catch (e) {
+      el.innerHTML = `<div style="padding:16px;background:#fef2f2;border-radius:8px;border:1px solid #fecaca;color:#dc2626;font-size:13px;">Mermaid 渲染失败: ${escapeHtml(e.message || '语法错误')}</div>`;
+    }
+  }
 }
 
 /**

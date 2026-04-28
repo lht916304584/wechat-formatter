@@ -286,16 +286,20 @@ const Components = {
   // B02 · 正文段落
   paragraph(content) {
     const p = TECH_PALETTE;
-    return `<p style="font-size:15px;line-height:1.9;color:${p.textMain};margin:0 0 20px;padding:0 4px;">${content}</p>`;
+    const fs = p._fontSize || 15;
+    const lh = p._lineHeight || 1.9;
+    const gap = p._paraSpacing || 20;
+    return `<p style="font-size:${fs}px;line-height:${lh};color:${p.textMain};margin:0 0 ${gap}px;padding:0 4px;">${content}</p>`;
   },
 
   // B03 · h2 二级标题
   h2(title) {
     const p = TECH_PALETTE;
+    const h2s = p._h2Size || 18;
     return `<div style="margin:32px 0 16px;">
   <div style="display:flex;align-items:center;">
     <div style="width:4px;height:22px;background:${p.primary};border-radius:2px;flex-shrink:0;margin-right:10px;"></div>
-    <div style="font-size:18px;font-weight:700;color:${p.primary};">${title}</div>
+    <div style="font-size:${h2s}px;font-weight:700;color:${p.primary};">${title}</div>
   </div>
 </div>`;
   },
@@ -303,8 +307,9 @@ const Components = {
   // B04 · h3 三级标题
   h3(title) {
     const p = TECH_PALETTE;
+    const h3s = p._h3Size || 15;
     return `<div style="margin:24px 0 12px;">
-  <span style="font-size:15px;font-weight:600;color:${p.accent};border-bottom:2px solid ${p.pop};padding-bottom:2px;">${title}</span>
+  <span style="font-size:${h3s}px;font-weight:600;color:${p.accent};border-bottom:2px solid ${p.pop};padding-bottom:2px;">${title}</span>
 </div>`;
   },
 
