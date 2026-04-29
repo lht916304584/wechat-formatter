@@ -47,7 +47,7 @@ index.html          # 入口页面
 
 ## 注意事项
 
-- 所有第三方资源（CodeMirror、marked、highlight.js）均通过 CDN 加载，部署后需确保访问者网络能连接到相应 CDN
+- 所有第三方资源（Monaco Editor、marked、highlight.js、KaTeX、Mermaid）均通过 CDN 加载，部署后需确保访问者网络能连接到相应 CDN
 - 如需完全离线使用，可把 CDN 文件下载到本地并修改 `index.html` 中的引用路径
 - 图片粘贴功能使用 base64 或图床，不受部署方式影响
 

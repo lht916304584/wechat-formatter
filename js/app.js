@@ -28,6 +28,10 @@
   const statusText = document.getElementById('statusText');
   const dragOverlay = document.getElementById('dragOverlay');
   const editorPanel = document.querySelector('.editor-panel');
+  const previewPanel = document.querySelector('.preview-panel');
+  const editorContainer = document.querySelector('.editor-container');
+  const btnTogglePreviewVisibility = document.getElementById('btnTogglePreviewVisibility');
+  const btnTogglePreviewPosition = document.getElementById('btnTogglePreviewPosition');
 
   // New toolbar elements
   const btnSave = document.getElementById('btnSave');
@@ -42,20 +46,26 @@
   const btnPublishCopy = document.getElementById('btnPublishCopy');
   const btnPublishExportHtml = document.getElementById('btnPublishExportHtml');
   const btnPublishExportPdf = document.getElementById('btnPublishExportPdf');
+  let pendingTemplatePreview = null;
 
   // ===== Monaco Editor (initialized in index.html) =====
   let editor = window.editor || null;
   let _monacoDisposable = [];
+  const pendingEditorChangeHandlers = [];
 
   function editorGetValue() { return editor ? editor.getValue() : ''; }
   function editorSetValue(v) { if (editor) editor.setValue(v); }
   function editorFocus() { if (editor) editor.focus(); }
+  function bindEditorChange(handler) {
+    const d = editor.onDidChangeModelContent(handler);
+    _monacoDisposable.push(d);
+    return d;
+  }
   function editorOnChange(handler) {
     if (editor && editor.onDidChangeModelContent) {
-      const d = editor.onDidChangeModelContent(handler);
-      _monacoDisposable.push(d);
-      return d;
+      return bindEditorChange(handler);
     }
+    pendingEditorChangeHandlers.push(handler);
     return { dispose: function() {} };
   }
   function editorOnScroll(handler) {
@@ -71,21 +81,294 @@
   let currentHtml = '';
   const STORAGE_KEY = 'wechat-formatter-content';
   const STORAGE_FORMAT_KEY = 'wechat-formatter-format';
+  const VERSIONS_KEY = 'wechat-formatter-versions';
+  const ARTICLES_KEY = 'wechat-articles';
+  const CUSTOM_TEMPLATES_KEY = 'wechat-custom-templates';
+  const FAVORITES_KEY = 'wechat-template-favorites';
+  const IDB_NAME = 'weedit-local-store';
+  const IDB_VERSION = 1;
+  const IDB_STORE = 'kv';
+  const PERSISTENT_KEYS = [
+    STORAGE_KEY,
+    STORAGE_FORMAT_KEY,
+    VERSIONS_KEY,
+    ARTICLES_KEY,
+    CUSTOM_TEMPLATES_KEY,
+    FAVORITES_KEY,
+  ];
+  const PERSISTENT_LABELS = {
+    [STORAGE_KEY]: '草稿',
+    [STORAGE_FORMAT_KEY]: '格式',
+    [VERSIONS_KEY]: '历史版本',
+    [ARTICLES_KEY]: '文章库',
+    [CUSTOM_TEMPLATES_KEY]: '自定义模板',
+    [FAVORITES_KEY]: '模板收藏',
+  };
+  const persistentCache = Object.create(null);
+  let persistentDb = null;
+  let persistentReady = false;
+
+  function persistLocalStorage(key, value, label) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (e) {
+      const isQuota = e && e.name === 'QuotaExceededError';
+      const prefix = label ? label + '保存失败' : '保存失败';
+      showToast(isQuota ? `${prefix}：浏览器存储空间已满，请先导出或清理历史版本` : `${prefix}：${e.message || '浏览器拒绝写入'}`, 3600);
+      return false;
+    }
+  }
+
+  function getLocalStorageItem(key) {
+    try {
+      return localStorage.getItem(key);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function removeLocalStorageItem(key) {
+    try {
+      localStorage.removeItem(key);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  function openPersistentDb() {
+    return new Promise((resolve, reject) => {
+      if (!window.indexedDB) {
+        resolve(null);
+        return;
+      }
+      const request = window.indexedDB.open(IDB_NAME, IDB_VERSION);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error('IndexedDB open failed'));
+      request.onblocked = () => reject(new Error('IndexedDB upgrade blocked'));
+    });
+  }
+
+  function idbRequest(method, key, value) {
+    return new Promise((resolve, reject) => {
+      if (!persistentDb) {
+        resolve(method === 'get' ? null : true);
+        return;
+      }
+      const tx = persistentDb.transaction(IDB_STORE, method === 'get' ? 'readonly' : 'readwrite');
+      const store = tx.objectStore(IDB_STORE);
+      let request;
+      if (method === 'get') request = store.get(key);
+      if (method === 'set') request = store.put(value, key);
+      if (method === 'delete') request = store.delete(key);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error('IndexedDB request failed'));
+      tx.onerror = () => reject(tx.error || new Error('IndexedDB transaction failed'));
+    });
+  }
+
+  async function initPersistentStore() {
+    try {
+      persistentDb = await openPersistentDb();
+    } catch (e) {
+      persistentDb = null;
+      console.warn('IndexedDB unavailable, falling back to localStorage:', e);
+    }
+
+    for (const key of PERSISTENT_KEYS) {
+      const localValue = getLocalStorageItem(key);
+      let dbValue = null;
+      if (persistentDb) {
+        try {
+          dbValue = await idbRequest('get', key);
+        } catch (e) {
+          console.warn('Failed to read IndexedDB key:', key, e);
+        }
+      }
+
+      if (dbValue !== null && dbValue !== undefined) {
+        persistentCache[key] = dbValue;
+      } else if (localValue !== null) {
+        persistentCache[key] = localValue;
+        if (persistentDb) {
+          try {
+            await idbRequest('set', key, localValue);
+            removeLocalStorageItem(key);
+          } catch (e) {
+            console.warn('Failed to migrate key:', key, e);
+          }
+        }
+      }
+    }
+    persistentReady = true;
+  }
+
+  function getPersistentItem(key) {
+    if (Object.prototype.hasOwnProperty.call(persistentCache, key)) return persistentCache[key];
+    return getLocalStorageItem(key);
+  }
+
+  function persistLargeItem(key, value, label) {
+    persistentCache[key] = value;
+    if (!persistentReady || !persistentDb) {
+      return persistLocalStorage(key, value, label);
+    }
+    idbRequest('set', key, value).then(() => {
+      removeLocalStorageItem(key);
+    }).catch(e => {
+      const prefix = label ? `${label}保存失败` : '保存失败';
+      showToast(`${prefix}：IndexedDB 写入失败，请先导出备份后刷新重试`, 3600);
+      console.warn('Failed to persist IndexedDB key:', key, e);
+    });
+    return true;
+  }
+
+  function removePersistentItem(key) {
+    delete persistentCache[key];
+    removeLocalStorageItem(key);
+    if (persistentReady && persistentDb) {
+      idbRequest('delete', key).catch(e => console.warn('Failed to delete IndexedDB key:', key, e));
+      return;
+    }
+  }
+
+  function formatBytes(bytes) {
+    const value = Number(bytes) || 0;
+    if (value < 1024) return `${value} B`;
+    const units = ['KB', 'MB', 'GB'];
+    let size = value / 1024;
+    let unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex++;
+    }
+    return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[unitIndex]}`;
+  }
+
+  function getPersistentPayloadSize() {
+    return PERSISTENT_KEYS.reduce((total, key) => {
+      const value = getPersistentItem(key);
+      return total + (value ? new Blob([String(value)]).size : 0);
+    }, 0);
+  }
+
+  async function getStorageSummary() {
+    const knownUsage = getPersistentPayloadSize();
+    if (navigator.storage && navigator.storage.estimate) {
+      try {
+        const estimate = await navigator.storage.estimate();
+        return {
+          usage: estimate.usage || knownUsage,
+          quota: estimate.quota || 0,
+          knownUsage,
+        };
+      } catch (e) {
+        /* fall through */
+      }
+    }
+    return { usage: knownUsage, quota: 0, knownUsage };
+  }
+
+  function refreshArticleStateAfterStorageChange() {
+    ArticleManager._data = null;
+    if (getPersistentItem(STORAGE_KEY) !== null) loadContent();
+    initArticleManager();
+    updatePreview();
+    updateStats();
+    if (activeTab) renderSidePanelContent(activeTab);
+  }
+
+  function downloadJson(filename, data) {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportLocalData() {
+    saveContent();
+    const items = {};
+    PERSISTENT_KEYS.forEach(key => {
+      const value = getPersistentItem(key);
+      if (value !== null && value !== undefined) items[key] = value;
+    });
+    const backup = {
+      app: 'WeEdit',
+      type: 'local-content-backup',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      items,
+    };
+    const date = new Date().toISOString().slice(0, 10);
+    downloadJson(`weedit-backup-${date}.json`, backup);
+    showToast('本地文章数据已导出');
+  }
+
+  function importLocalDataFromFile(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const backup = JSON.parse(reader.result);
+        const items = backup && backup.items;
+        if (!items || typeof items !== 'object') throw new Error('invalid backup');
+        if (!confirm('导入备份会覆盖当前草稿、文章库、历史版本和自定义模板，确定继续吗？')) return;
+
+        PERSISTENT_KEYS.forEach(key => {
+          if (Object.prototype.hasOwnProperty.call(items, key)) {
+            persistLargeItem(key, String(items[key]), PERSISTENT_LABELS[key]);
+          } else {
+            removePersistentItem(key);
+          }
+        });
+        refreshArticleStateAfterStorageChange();
+        showToast('本地文章数据已恢复');
+      } catch (e) {
+        showToast('备份文件无效，导入失败');
+      }
+    };
+    reader.onerror = () => showToast('备份文件读取失败');
+    reader.readAsText(file);
+  }
+
+  function importLocalData() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json,.json';
+    input.addEventListener('change', () => {
+      if (input.files && input.files[0]) importLocalDataFromFile(input.files[0]);
+    }, { once: true });
+    input.click();
+  }
+
+  function clearLocalData() {
+    if (!confirm('确定清空本地草稿、文章库、历史版本和自定义模板吗？此操作不可撤销。')) return;
+    PERSISTENT_KEYS.forEach(removePersistentItem);
+    ArticleManager._data = { current: null, articles: {} };
+    editorSetValue('');
+    inputFormat.value = 'markdown';
+    updatePreview();
+    updateStats();
+    if (activeTab) renderSidePanelContent(activeTab);
+    showToast('本地文章数据已清空');
+  }
 
   // ===== 自动保存 / 恢复 =====
   const STORAGE_TARGET_KEY = 'wechat-formatter-target';
 
   function saveContent() {
-    try {
-      localStorage.setItem(STORAGE_KEY, editor.getValue());
-      localStorage.setItem(STORAGE_FORMAT_KEY, inputFormat.value);
-    } catch (e) {
-      if (e.name === 'QuotaExceededError') {
-        showToast('存储空间已满，建议导出备份后清空历史版本');
-      }
-    }
+    const okContent = persistLargeItem(STORAGE_KEY, editor.getValue(), '草稿');
+    const okFormat = persistLargeItem(STORAGE_FORMAT_KEY, inputFormat.value, '格式');
     autoSaveVersion();
-    showSaveIndicator();
+    if (okContent && okFormat) showSaveIndicator();
   }
 
   function showSaveIndicator() {
@@ -131,8 +414,8 @@
 
   function loadContent() {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      const savedFormat = localStorage.getItem(STORAGE_FORMAT_KEY);
+      const saved = getPersistentItem(STORAGE_KEY);
+      const savedFormat = getPersistentItem(STORAGE_FORMAT_KEY);
       if (saved !== null && saved.trim()) {
         editorSetValue(saved);
         if (savedFormat) inputFormat.value = savedFormat;
@@ -144,29 +427,24 @@
   }
 
   function clearStorage() {
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.removeItem(STORAGE_FORMAT_KEY);
-    } catch (e) { /* ignore */ }
+    removePersistentItem(STORAGE_KEY);
+    removePersistentItem(STORAGE_FORMAT_KEY);
   }
 
   // ===== 历史版本管理 =====
-  const VERSIONS_KEY = 'wechat-formatter-versions';
   const MAX_VERSIONS = 20;
   const AUTO_SAVE_INTERVAL = 5 * 60 * 1000; // 5分钟
   let lastVersionTime = 0;
 
   function getVersions() {
     try {
-      const raw = localStorage.getItem(VERSIONS_KEY);
+      const raw = getPersistentItem(VERSIONS_KEY);
       return raw ? JSON.parse(raw) : [];
     } catch (e) { return []; }
   }
 
   function setVersions(list) {
-    try {
-      localStorage.setItem(VERSIONS_KEY, JSON.stringify(list.slice(-MAX_VERSIONS)));
-    } catch (e) { /* ignore quota errors */ }
+    persistLargeItem(VERSIONS_KEY, JSON.stringify(list.slice(-MAX_VERSIONS)), '历史版本');
   }
 
   function saveVersion(manual = false) {
@@ -227,7 +505,7 @@
 
   function clearAllVersions() {
     if (!confirm('确定清空所有历史版本吗？')) return;
-    try { localStorage.removeItem(VERSIONS_KEY); } catch (e) {}
+    removePersistentItem(VERSIONS_KEY);
     renderHistoryList();
     showToast('已清空历史版本');
   }
@@ -394,6 +672,7 @@
       preview.innerHTML = currentHtml;
       checkWechatCompatibility();
       updateOutline();
+      annotatePreviewHeadings();
       highlightOutline();
       addCodeCopyButtons();
       // Render Mermaid diagrams asynchronously
@@ -486,16 +765,37 @@
     return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
   }
 
+  function normalizeOutlineText(str) {
+    return String(str || '').replace(/\s+/g, '').replace(/[#*_`]/g, '').trim();
+  }
+
+  function annotatePreviewHeadings() {
+    if (!preview || outlineItems.length === 0) return;
+    const candidates = Array.from(preview.querySelectorAll('div, span'))
+      .filter(el => el.children.length === 0 && normalizeOutlineText(el.textContent));
+    let start = 0;
+    outlineItems.forEach((item, idx) => {
+      const targetText = normalizeOutlineText(item.text);
+      for (let i = start; i < candidates.length; i++) {
+        if (normalizeOutlineText(candidates[i].textContent) === targetText) {
+          candidates[i].dataset.previewHeadingIdx = String(idx);
+          start = i + 1;
+          break;
+        }
+      }
+    });
+  }
+
   function highlightOutline() {
     if (!outlineList || outlineItems.length === 0) return;
-    const headings = preview.querySelectorAll('h1, h2, h3, h4');
+    const headings = preview.querySelectorAll('[data-preview-heading-idx]');
     if (!headings.length) return;
     let activeIdx = -1;
     const wrapperTop = previewWrapper.scrollTop;
     for (let i = 0; i < headings.length; i++) {
       const el = headings[i];
       if (el.offsetTop <= wrapperTop + 40) {
-        activeIdx = i;
+        activeIdx = Number(el.dataset.previewHeadingIdx);
       } else {
         break;
       }
@@ -512,8 +812,8 @@
       const item = e.target.closest('.outline-item[data-line]');
       if (!item) return;
       const line = parseInt(item.dataset.line, 10);
-      const headings = preview.querySelectorAll('h1, h2, h3, h4');
-      const target = headings[line] || Array.from(headings).find((_, i) => i === parseInt(item.dataset.idx, 10));
+      const idx = parseInt(item.dataset.idx, 10);
+      const target = preview.querySelector(`[data-preview-heading-idx="${idx}"]`);
       if (target) {
         previewWrapper.scrollTo({ top: target.offsetTop - 20, behavior: 'smooth' });
       }
@@ -537,28 +837,20 @@
   });
 
   // ===== 复制到微信 =====
-  async function copyForWechat() {
-    if (!currentHtml) {
-      showToast('请先输入内容');
-      return;
-    }
-    const wrapped = wrapForWechat(currentHtml);
+  async function copyRichHtml(html, successMessage) {
     try {
-      // 使用 Clipboard API 复制富文本
-      const blob = new Blob([wrapped], { type: 'text/html' });
-      const plainBlob = new Blob([wrapped], { type: 'text/plain' });
-      await navigator.clipboard.write([
-        new ClipboardItem({
-          'text/html': blob,
-          'text/plain': plainBlob,
-        }),
-      ]);
-      showToast('已复制，可直接粘贴到微信编辑器');
-    } catch (e) {
-      // 回退方案：选中内容并复制
-      try {
+      if (navigator.clipboard && window.ClipboardItem && navigator.clipboard.write) {
+        const htmlBlob = new Blob([html], { type: 'text/html' });
+        const textBlob = new Blob([stripHtmlToText(html)], { type: 'text/plain' });
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'text/html': htmlBlob,
+            'text/plain': textBlob,
+          }),
+        ]);
+      } else {
         const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = wrapped;
+        tempDiv.innerHTML = html;
         tempDiv.style.position = 'fixed';
         tempDiv.style.left = '-9999px';
         document.body.appendChild(tempDiv);
@@ -568,13 +860,30 @@
         sel.removeAllRanges();
         sel.addRange(range);
         document.execCommand('copy');
-        document.body.removeChild(tempDiv);
         sel.removeAllRanges();
-        showToast('已复制，可直接粘贴到微信编辑器');
-      } catch (e2) {
-        showToast('复制失败，请使用导出 HTML 功能');
+        document.body.removeChild(tempDiv);
       }
+      showToast(successMessage || '已复制，可直接粘贴到微信公众号编辑器');
+      return true;
+    } catch (e) {
+      showToast('复制失败，请使用导出 HTML 功能');
+      return false;
     }
+  }
+
+  function stripHtmlToText(html) {
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    return div.textContent || div.innerText || '';
+  }
+
+  async function copyForWechat() {
+    if (!currentHtml) {
+      showToast('请先输入内容');
+      return;
+    }
+    const wrapped = wrapForWechat(currentHtml);
+    await copyRichHtml(wrapped, '已复制，可直接粘贴到微信公众号编辑器');
   }
 
   // ===== 导出 HTML =====
@@ -627,6 +936,22 @@
     updatePreview();
     saveContent();
     showToast('图片已插入');
+  }
+
+  function insertImageAsDataUrl(file, hideLoading) {
+    if (file.size > 1024 * 1024) {
+      showToast('图片将以 base64 写入，可能占用较多浏览器存储，建议配置图床', 3200);
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      if (hideLoading) hideLoading();
+      insertImageMarkdown(e.target.result);
+    };
+    reader.onerror = () => {
+      if (hideLoading) hideLoading();
+      showToast('图片读取失败');
+    };
+    reader.readAsDataURL(file);
   }
 
   // ===== 图床配置 =====
@@ -690,22 +1015,16 @@
           showToast('图片已上传');
         } else {
           showToast('图床上传失败，已转为 base64');
-          const reader = new FileReader();
-          reader.onload = (e) => insertImageMarkdown(e.target.result);
-          reader.readAsDataURL(file);
+          insertImageAsDataUrl(file);
         }
       }).catch(() => {
         hideLoading();
         showToast('图床上传失败，已转为 base64');
-        const reader = new FileReader();
-        reader.onload = (e) => insertImageMarkdown(e.target.result);
-        reader.readAsDataURL(file);
+        insertImageAsDataUrl(file);
       });
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (e) => { hideLoading(); insertImageMarkdown(e.target.result); };
-    reader.readAsDataURL(file);
+    insertImageAsDataUrl(file, hideLoading);
   }
 
   // ===== 文件导入 =====
@@ -734,10 +1053,18 @@
   }
 
   // ===== 预览设备切换 =====
+  function normalizePreviewDevice(value) {
+    if (value === 'desktop') return 'desktop';
+    if (value === 'tablet' || value === '744') return 'tablet';
+    return 'phone';
+  }
+
   function setPreviewDevice(value) {
-    const width = value === 'desktop' ? '100%' : (value + 'px');
+    const device = normalizePreviewDevice(value);
+    const widthMap = { phone: '390px', tablet: '744px', desktop: '100%' };
+    const width = widthMap[device];
     preview.style.setProperty('--device-width', width);
-    if (value === 'desktop') {
+    if (device === 'desktop') {
       preview.classList.add('desktop-mode');
       preview.classList.remove('device-mobile', 'device-tablet');
       // 桌面模式恢复大纲
@@ -747,8 +1074,7 @@
       }
     } else {
       preview.classList.remove('desktop-mode');
-      const num = parseInt(value, 10);
-      if (num >= 700) {
+      if (device === 'tablet') {
         preview.classList.add('device-tablet');
         preview.classList.remove('device-mobile');
       } else {
@@ -761,8 +1087,8 @@
         if (btnToggleOutline) btnToggleOutline.classList.remove('active');
       }
     }
-    if (deviceSelect) deviceSelect.value = value;
-    localStorage.setItem('previewDevice', value);
+    if (deviceSelect) deviceSelect.value = device;
+    localStorage.setItem('previewDevice', device);
   }
 
   // ===== 同步滚动 =====
@@ -2120,6 +2446,9 @@
   // ===== 初始加载（等待 Monaco 就绪） =====
   function initApp() {
     editor = window.editor || null;
+    while (editor && pendingEditorChangeHandlers.length) {
+      bindEditorChange(pendingEditorChangeHandlers.shift());
+    }
     if (!loadContent()) {
       const sampleMarkdown = [
         '# 让AI帮你做数据整理',
@@ -2205,10 +2534,15 @@
     });
   }
 
-  if (window._monacoReady) {
+  async function bootApp() {
+    await initPersistentStore();
     initApp();
+  }
+
+  if (window._monacoReady) {
+    bootApp();
   } else {
-    document.addEventListener('monaco-ready', initApp, { once: true });
+    document.addEventListener('monaco-ready', bootApp, { once: true });
   }
 
   // ===== Activity Bar + Side Panel =====
@@ -2275,13 +2609,12 @@
   }
 
   // ===== Article Management =====
-  const ARTICLES_KEY = 'wechat-articles';
   const ArticleManager = {
     _data: null,
     _load() {
       if (this._data) return this._data;
       try {
-        const raw = localStorage.getItem(ARTICLES_KEY);
+        const raw = getPersistentItem(ARTICLES_KEY);
         this._data = raw ? JSON.parse(raw) : { current: null, articles: {} };
       } catch (e) {
         this._data = { current: null, articles: {} };
@@ -2289,7 +2622,7 @@
       return this._data;
     },
     _save() {
-      try { localStorage.setItem(ARTICLES_KEY, JSON.stringify(this._data)); } catch (e) {}
+      return persistLargeItem(ARTICLES_KEY, JSON.stringify(this._data), '文章库');
     },
     _genId() { return 'a_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8); },
     create(title) {
@@ -2341,10 +2674,10 @@
   function initArticleManager() {
     const current = ArticleManager.getCurrent();
     if (!current) {
-      const existing = localStorage.getItem(STORAGE_KEY);
+      const existing = getPersistentItem(STORAGE_KEY);
       const id = ArticleManager.create(existing ? (existing.trim().split('\n')[0].slice(0, 30) || '无标题文章') : '无标题文章');
       if (existing && existing.trim()) {
-        ArticleManager.save(id, { content: existing, format: localStorage.getItem(STORAGE_FORMAT_KEY) || 'markdown' });
+        ArticleManager.save(id, { content: existing, format: getPersistentItem(STORAGE_FORMAT_KEY) || 'markdown' });
       }
     }
   }
@@ -2356,7 +2689,12 @@
   const origSaveContent = window._saveContent || saveContent;
 
   function saveToArticle() {
-    const cur = ArticleManager.getCurrent();
+    let cur = ArticleManager.getCurrent();
+    if (!cur && editor.getValue().trim()) {
+      const title = editor.getValue().trim().split('\n')[0].replace(/^#+\s*/, '').slice(0, 30) || '无标题文章';
+      ArticleManager.create(title);
+      cur = ArticleManager.getCurrent();
+    }
     if (cur) {
       ArticleManager.save(cur.id, { content: editor.getValue(), format: inputFormat.value, theme: templateSelect.value });
     }
@@ -2435,13 +2773,11 @@
   };
 
   function renderTemplatesTab() {
-    const CUSTOM_TEMPLATES_KEY = 'wechat-custom-templates';
-    const FAVORITES_KEY = 'wechat-template-favorites';
     let customTemplates = [];
     let favorites = [];
     try {
-      customTemplates = JSON.parse(localStorage.getItem(CUSTOM_TEMPLATES_KEY) || '[]');
-      favorites = JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]');
+      customTemplates = JSON.parse(getPersistentItem(CUSTOM_TEMPLATES_KEY) || '[]');
+      favorites = JSON.parse(getPersistentItem(FAVORITES_KEY) || '[]');
     } catch (e) {}
 
     const categories = ['全部', '收藏', '教育', '科技', '商业', '节日', '生活'];
@@ -2499,6 +2835,7 @@
         const cover = t.coverColor || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
         const category = t.category || '自定义';
         const onclick = item.type === 'system' ? `window._spUseTemplate(${item.index})` : `window._spUseCustomTemplate(${item.index})`;
+        const previewClick = `window._spPreviewTemplate('${item.type}', ${item.index})`;
         const delBtn = item.type === 'custom' ? `<button class="tpl-del-btn" onclick="event.stopPropagation();window._spDeleteCustomTemplate(${item.index})" title="删除"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>` : '';
         html += `
           <div class="tpl-card">
@@ -2514,7 +2851,10 @@
               <div class="tpl-card-desc">${escapeHtml(t.desc || '')}</div>
               <div class="tpl-card-footer">
                 <span class="tpl-card-tag">${category}</span>
-                <button class="tpl-use-btn" onclick="${onclick}">使用模板</button>
+                <div class="tpl-card-actions">
+                  <button class="tpl-preview-btn" onclick="event.stopPropagation();${previewClick}">预览</button>
+                  <button class="tpl-use-btn" onclick="${onclick}">使用</button>
+                </div>
               </div>
             </div>
           </div>
@@ -2545,13 +2885,13 @@
         e.stopPropagation();
         const key = btn.dataset.favKey;
         let favs = [];
-        try { favs = JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]'); } catch (e) {}
+        try { favs = JSON.parse(getPersistentItem(FAVORITES_KEY) || '[]'); } catch (e) {}
         if (favs.includes(key)) {
           favs = favs.filter(k => k !== key);
         } else {
           favs.push(key);
         }
-        localStorage.setItem(FAVORITES_KEY, JSON.stringify(favs));
+        persistLargeItem(FAVORITES_KEY, JSON.stringify(favs), '模板收藏');
         renderTemplatesTab();
       });
     });
@@ -2562,9 +2902,8 @@
     if (!content.trim()) { showToast('内容为空，无法保存为模板'); return; }
     const name = prompt('请输入模板名称：', content.trim().split('\n')[0].slice(0, 30) || '自定义模板');
     if (!name) return;
-    const CUSTOM_TEMPLATES_KEY = 'wechat-custom-templates';
     let customTemplates = [];
-    try { customTemplates = JSON.parse(localStorage.getItem(CUSTOM_TEMPLATES_KEY) || '[]'); } catch (e) {}
+    try { customTemplates = JSON.parse(getPersistentItem(CUSTOM_TEMPLATES_KEY) || '[]'); } catch (e) {}
     customTemplates.push({
       name: name,
       content: content,
@@ -2572,15 +2911,72 @@
       theme: templateSelect.value,
       createdAt: Date.now(),
     });
-    localStorage.setItem(CUSTOM_TEMPLATES_KEY, JSON.stringify(customTemplates));
+    persistLargeItem(CUSTOM_TEMPLATES_KEY, JSON.stringify(customTemplates), '自定义模板');
     showToast('模板已保存：' + name);
     renderTemplatesTab();
   };
 
+  function getCustomTemplates() {
+    try { return JSON.parse(getPersistentItem(CUSTOM_TEMPLATES_KEY) || '[]'); } catch (e) { return []; }
+  }
+
+  function getTemplateItem(type, idx) {
+    if (type === 'system') return TEMPLATES[idx] || null;
+    if (type === 'custom') return getCustomTemplates()[idx] || null;
+    return null;
+  }
+
+  function ensureTemplatePreviewModal() {
+    let modal = document.getElementById('templatePreviewModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'templatePreviewModal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-label', '预览模板');
+    modal.style.display = 'none';
+    modal.innerHTML = `
+      <div class="modal-content" style="max-width:620px">
+        <div class="modal-header">
+          <div class="modal-title" id="templatePreviewTitle">预览模板</div>
+          <button class="modal-close" id="btnCloseTemplatePreview"></button>
+        </div>
+        <div class="template-preview-body">
+          <div class="template-preview-paper" id="templatePreviewPaper"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" id="btnTemplatePreviewClose">关闭</button>
+          <button class="btn btn-primary" id="btnTemplatePreviewUse">使用模板</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    const close = () => closeModal(modal);
+    modal.addEventListener('click', e => { if (e.target === modal) close(); });
+    modal.querySelector('#btnCloseTemplatePreview').addEventListener('click', close);
+    modal.querySelector('#btnTemplatePreviewClose').addEventListener('click', close);
+    modal.querySelector('#btnTemplatePreviewUse').addEventListener('click', () => {
+      if (!pendingTemplatePreview) return;
+      close();
+      if (pendingTemplatePreview.type === 'system') window._spUseTemplate(pendingTemplatePreview.idx);
+      if (pendingTemplatePreview.type === 'custom') window._spUseCustomTemplate(pendingTemplatePreview.idx);
+    });
+    return modal;
+  }
+
+  window._spPreviewTemplate = function(type, idx) {
+    const template = getTemplateItem(type, idx);
+    if (!template) return;
+    pendingTemplatePreview = { type, idx };
+    const modal = ensureTemplatePreviewModal();
+    const paper = modal.querySelector('#templatePreviewPaper');
+    const title = modal.querySelector('#templatePreviewTitle');
+    if (title) title.textContent = template.name || '预览模板';
+    if (paper) paper.innerHTML = renderContent(template.content || '', template.format || 'markdown');
+    openModal(modal);
+  };
+
   window._spUseCustomTemplate = function(idx) {
-    const CUSTOM_TEMPLATES_KEY = 'wechat-custom-templates';
-    let customTemplates = [];
-    try { customTemplates = JSON.parse(localStorage.getItem(CUSTOM_TEMPLATES_KEY) || '[]'); } catch (e) {}
+    let customTemplates = getCustomTemplates();
     if (!customTemplates[idx]) return;
     if (editor.getValue().trim() && !confirm('使用模板将覆盖当前内容，确定吗？')) return;
     editor.setValue(customTemplates[idx].content);
@@ -2594,13 +2990,12 @@
   };
 
   window._spDeleteCustomTemplate = function(idx) {
-    const CUSTOM_TEMPLATES_KEY = 'wechat-custom-templates';
     let customTemplates = [];
-    try { customTemplates = JSON.parse(localStorage.getItem(CUSTOM_TEMPLATES_KEY) || '[]'); } catch (e) {}
+    try { customTemplates = JSON.parse(getPersistentItem(CUSTOM_TEMPLATES_KEY) || '[]'); } catch (e) {}
     if (!customTemplates[idx]) return;
     if (!confirm('确定删除模板 "' + customTemplates[idx].name + '" 吗？')) return;
     customTemplates.splice(idx, 1);
-    localStorage.setItem(CUSTOM_TEMPLATES_KEY, JSON.stringify(customTemplates));
+    persistLargeItem(CUSTOM_TEMPLATES_KEY, JSON.stringify(customTemplates), '自定义模板');
     renderTemplatesTab();
   };
 
@@ -2803,7 +3198,7 @@
     html += `<div class="sp-setting-row"><label class="sp-setting-label">上传接口 URL</label><input class="sp-setting-input" id="spImgBedUrl" value="${escapeHtml(imgBedConfig.url || '')}" placeholder="https://sm.ms/api/v2/upload"></div>`;
     html += `<div class="sp-setting-row"><label class="sp-setting-label">文件字段名</label><input class="sp-setting-input" id="spImgBedField" value="${escapeHtml(imgBedConfig.field || '')}" placeholder="smfile"></div>`;
     html += `<div class="sp-setting-row"><label class="sp-setting-label">图片 URL 路径</label><input class="sp-setting-input" id="spImgBedPath" value="${escapeHtml(imgBedConfig.path || '')}" placeholder="data.url"></div>`;
-    html += `<div class="sp-setting-row"><label class="sp-setting-label">Authorization</label><input class="sp-setting-input" id="spImgBedAuth" value="${escapeHtml(imgBedConfig.auth || '')}" placeholder="Bearer xxx"></div>`;
+    html += `<div class="sp-setting-row"><label class="sp-setting-label">Authorization</label><input class="sp-setting-input" type="password" autocomplete="off" id="spImgBedAuth" value="${escapeHtml(imgBedConfig.auth || '')}" placeholder="Bearer xxx"></div>`;
 
     html += `<div class="sp-section-title">AI 助手设置</div>`;
     html += `<div class="sp-setting-row"><label class="sp-setting-label">API 地址</label><input class="sp-setting-input" id="spAiApiUrl" value="${escapeHtml(aiConfig.apiUrl || '')}" placeholder="https://open.bigmodel.cn/api/paas/v4/chat/completions"></div>`;
@@ -2828,8 +3223,21 @@
     html += `</div>`;
     html += `<div id="spSyncStatus" style="font-size:11px;color:var(--text-tertiary);margin-top:6px;min-height:16px"></div>`;
 
+    html += `<div class="sp-section-title">本地存储</div>`;
+    html += `<div class="sp-storage-card">
+      <div class="sp-storage-line"><span>存储引擎</span><strong>${persistentDb ? 'IndexedDB' : 'localStorage 兜底'}</strong></div>
+      <div class="sp-storage-line"><span>内容数据</span><strong id="spStorageUsage">计算中...</strong></div>
+      <div style="font-size:12px;color:var(--text-secondary);line-height:1.7;">文章库、草稿、历史版本和自定义模板保存在本机浏览器。图片较大时仍建议配置图床，避免正文过大。</div>
+      <div class="sp-storage-actions">
+        <button class="sp-btn" onclick="window._spExportLocalData()">导出备份</button>
+        <button class="sp-btn" onclick="window._spImportLocalData()">导入备份</button>
+      </div>
+      <button class="sp-btn sp-storage-danger" style="margin-top:8px;width:100%" onclick="window._spClearLocalData()">清空本地文章数据</button>
+    </div>`;
+
     html += `<button class="sp-btn" style="margin-top:8px" onclick="window._spSaveSettings()">保存设置</button>`;
     sidePanelContent.innerHTML = html;
+    updateStorageUsage();
 
     // Restore sync provider selection and toggle visibility
     const spProvider = document.getElementById('spSyncProvider');
@@ -2844,6 +3252,23 @@
       spProvider.dispatchEvent(new Event('change'));
     }
   }
+
+  async function updateStorageUsage() {
+    const el = document.getElementById('spStorageUsage');
+    if (!el) return;
+    const summary = await getStorageSummary();
+    if (!document.body.contains(el)) return;
+    const known = formatBytes(summary.knownUsage);
+    if (summary.quota) {
+      el.textContent = `${known} 内容 / ${formatBytes(summary.quota)} 可用`;
+    } else {
+      el.textContent = `${known} 内容`;
+    }
+  }
+
+  window._spExportLocalData = exportLocalData;
+  window._spImportLocalData = importLocalData;
+  window._spClearLocalData = clearLocalData;
 
   window._spSaveSettings = function() {
     const imgBed = {
@@ -3075,10 +3500,11 @@
       { id: 'theme-minimal', label: '主题：极简黑白', icon: '⬜', action: () => { templateSelect.value = 'minimal'; updatePreview(); } },
       { id: 'theme-warm', label: '主题：温暖焦糖', icon: '🟡', action: () => { templateSelect.value = 'warm'; updatePreview(); } },
       { id: 'sep3', type: 'separator' },
+      { id: 'toggle-preview', label: '显示/隐藏预览', icon: '👁️', shortcut: 'Ctrl+P', action: togglePreviewVisibility },
       { id: 'toggle-preview-pos', label: '切换预览位置', icon: '↔️', shortcut: 'Ctrl+Shift+P', action: togglePreviewPosition },
       { id: 'toggle-preview-mode', label: '切换预览设备', icon: '📱', action: () => {
-        const devices = ['375', '390', '430', '744', 'desktop'];
-        const current = deviceSelect?.value || '375';
+        const devices = ['phone', 'tablet', 'desktop'];
+        const current = normalizePreviewDevice(deviceSelect?.value || 'phone');
         const idx = devices.indexOf(current);
         const next = devices[(idx + 1) % devices.length];
         setPreviewDevice(next);
@@ -3182,11 +3608,10 @@
       { label: '写作模板', action: () => toggleSidePanel('templates') },
     ],
     view: [
-      { label: 'iPhone SE 预览', action: () => setPreviewDevice('375') },
-      { label: 'iPhone 14 预览', action: () => setPreviewDevice('390') },
-      { label: 'iPhone 14 Pro Max 预览', action: () => setPreviewDevice('430') },
-      { label: 'iPad Mini 预览', action: () => setPreviewDevice('744') },
-      { label: '桌面预览', action: () => setPreviewDevice('desktop') },
+      { label: '手机预览', action: () => setPreviewDevice('phone') },
+      { label: '平板预览', action: () => setPreviewDevice('tablet') },
+      { label: '电脑预览', action: () => setPreviewDevice('desktop') },
+      { label: '显示/隐藏预览', shortcut: 'Ctrl+P', action: togglePreviewVisibility },
       { label: '切换预览位置', shortcut: 'Ctrl+Shift+P', action: togglePreviewPosition },
       { type: 'separator' },
       { label: '文章管理', action: () => toggleSidePanel('articles') },
@@ -3269,18 +3694,51 @@
   });
 
   // ===== Preview Position Toggle =====
+  function setPreviewVisibility(hidden) {
+    if (!previewPanel || !editorContainer) return;
+    previewPanel.classList.toggle('hidden', hidden);
+    editorContainer.classList.toggle('preview-hidden', hidden);
+    localStorage.setItem('wechat-preview-hidden', hidden ? 'true' : 'false');
+    if (btnTogglePreviewVisibility) {
+      btnTogglePreviewVisibility.classList.toggle('active', hidden);
+      btnTogglePreviewVisibility.title = hidden ? '显示预览' : '隐藏预览';
+      const label = btnTogglePreviewVisibility.childNodes[btnTogglePreviewVisibility.childNodes.length - 1];
+      if (label) label.textContent = hidden ? '显示预览' : '隐藏预览';
+    }
+    if (editor && editor.layout) setTimeout(() => editor.layout(), 0);
+  }
+
+  function togglePreviewVisibility() {
+    const hidden = previewPanel && previewPanel.classList.contains('hidden');
+    setPreviewVisibility(!hidden);
+  }
+
+  function updatePreviewPositionButton() {
+    if (!btnTogglePreviewPosition || !editorContainer) return;
+    const reversed = editorContainer.classList.contains('reverse');
+    btnTogglePreviewPosition.classList.toggle('active', reversed);
+    btnTogglePreviewPosition.title = reversed ? '预览靠右' : '预览靠左';
+    const label = btnTogglePreviewPosition.childNodes[btnTogglePreviewPosition.childNodes.length - 1];
+    if (label) label.textContent = reversed ? '预览靠右' : '预览靠左';
+  }
+
   function togglePreviewPosition() {
-    const container = document.querySelector('.editor-container');
-    if (container) {
-      container.classList.toggle('reverse');
-      localStorage.setItem('wechat-preview-reversed', container.classList.contains('reverse'));
+    if (editorContainer) {
+      editorContainer.classList.toggle('reverse');
+      localStorage.setItem('wechat-preview-reversed', editorContainer.classList.contains('reverse'));
+      updatePreviewPositionButton();
+      if (editor && editor.layout) setTimeout(() => editor.layout(), 0);
     }
   }
 
   // Restore preview position
   if (localStorage.getItem('wechat-preview-reversed') === 'true') {
-    document.querySelector('.editor-container')?.classList.add('reverse');
+    editorContainer?.classList.add('reverse');
   }
+  updatePreviewPositionButton();
+  setPreviewVisibility(localStorage.getItem('wechat-preview-hidden') === 'true');
+  if (btnTogglePreviewVisibility) btnTogglePreviewVisibility.addEventListener('click', togglePreviewVisibility);
+  if (btnTogglePreviewPosition) btnTogglePreviewPosition.addEventListener('click', togglePreviewPosition);
 
   // Restore preview device
   const savedDevice = localStorage.getItem('previewDevice');
@@ -3305,6 +3763,12 @@
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'P') {
       e.preventDefault();
       togglePreviewPosition();
+      return;
+    }
+    // Preview visibility toggle
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'p') {
+      e.preventDefault();
+      togglePreviewVisibility();
       return;
     }
     // Close command palette on Escape
@@ -3492,12 +3956,7 @@
     btnPublishCopy.addEventListener('click', async () => {
       if (!currentHtml) { showToast('请先输入内容'); return; }
       const html = wrapForWechat(currentHtml);
-      try {
-        await navigator.clipboard.writeText(html);
-        showToast('已复制 HTML 到剪贴板');
-      } catch (e) {
-        showToast('复制失败，请手动复制');
-      }
+      await copyRichHtml(html, '已复制富文本，可直接粘贴到微信公众号编辑器');
     });
   }
   if (btnPublishExportHtml) {

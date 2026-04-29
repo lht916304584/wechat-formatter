@@ -16,6 +16,80 @@ function stripHtml(html) {
   return html.replace(/<[^>]+>/g, '').trim();
 }
 
+function sanitizeInlineStyle(style) {
+  return String(style || '')
+    .split(';')
+    .map(rule => rule.trim())
+    .filter(Boolean)
+    .filter(rule => !/expression\s*\(|url\s*\(|@import|-moz-binding|behavior\s*:/i.test(rule))
+    .join('; ');
+}
+
+function isSafeUrl(value, attr) {
+  const raw = String(value || '').trim();
+  if (!raw) return true;
+  if (/^(#|\/(?!\/)|\.{0,2}\/)/.test(raw)) return true;
+  if (/^https?:\/\//i.test(raw)) return true;
+  if ((attr === 'href') && /^(mailto|tel):/i.test(raw)) return true;
+  if ((attr === 'src') && /^data:image\/(png|jpe?g|gif|webp);base64,/i.test(raw)) return true;
+  return false;
+}
+
+function sanitizeHtmlInput(content) {
+  const template = document.createElement('template');
+  template.innerHTML = String(content || '');
+  const dangerousTags = new Set(['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button', 'textarea', 'select', 'option', 'meta', 'link', 'base']);
+  const allowedTags = new Set(['a', 'abbr', 'b', 'blockquote', 'br', 'code', 'del', 'div', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'li', 'ol', 'p', 'pre', 'span', 'strong', 'sub', 'sup', 'table', 'tbody', 'td', 'th', 'thead', 'tr', 'ul']);
+  const globalAttrs = new Set(['title', 'style', 'align']);
+  const attrAllowList = {
+    a: new Set(['href', 'title']),
+    img: new Set(['src', 'alt', 'title', 'width', 'height']),
+    td: new Set(['colspan', 'rowspan']),
+    th: new Set(['colspan', 'rowspan']),
+    table: new Set(['width']),
+  };
+
+  function walk(node) {
+    [...node.children].forEach(child => {
+      const tag = child.tagName.toLowerCase();
+      if (dangerousTags.has(tag)) {
+        child.remove();
+        return;
+      }
+      if (!allowedTags.has(tag)) {
+        walk(child);
+        child.replaceWith(...child.childNodes);
+        return;
+      }
+      [...child.attributes].forEach(attr => {
+        const name = attr.name.toLowerCase();
+        const allowedForTag = attrAllowList[tag] && attrAllowList[tag].has(name);
+        if (name.startsWith('on') || name === 'srcdoc' || name === 'id' || name === 'class') {
+          child.removeAttribute(attr.name);
+          return;
+        }
+        if (!globalAttrs.has(name) && !allowedForTag) {
+          child.removeAttribute(attr.name);
+          return;
+        }
+        if ((name === 'href' || name === 'src') && !isSafeUrl(attr.value, name)) {
+          child.removeAttribute(attr.name);
+          return;
+        }
+        if (name === 'style') {
+          const safeStyle = sanitizeInlineStyle(attr.value);
+          if (safeStyle) child.setAttribute('style', safeStyle);
+          else child.removeAttribute('style');
+        }
+      });
+      walk(child);
+    });
+  }
+
+  walk(template.content);
+  return template.innerHTML;
+}
+
 function createWechatRenderer() {
   const renderer = new marked.Renderer();
   let isFirstHeading = true;
@@ -459,17 +533,7 @@ function escapeHtml(str) {
  * 渲染 HTML 输入（清洗）
  */
 function renderHtmlContent(content) {
-  return content
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
-    .replace(/<object[\s\S]*?<\/object>/gi, '')
-    .replace(/<embed[^>]*>/gi, '')
-    .replace(/<form[\s\S]*?<\/form>/gi, '')
-    .replace(/\son\w+="[^"]*"/gi, '')
-    .replace(/href="javascript:[^"]*"/gi, '')
-    .replace(/class="[^"]*"/gi, '')
-    .replace(/id="[^"]*"/gi, '');
+  return sanitizeHtmlInput(content);
 }
 
 /**

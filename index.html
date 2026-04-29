@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>微信排版工具</title>
+  <title>WeEdit 微信排版工具</title>
   <link rel="stylesheet" href="css/main.css">
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
@@ -26,7 +26,7 @@
             <line x1="3" y1="9" x2="21" y2="9"></line>
             <line x1="9" y1="21" x2="9" y2="9"></line>
           </svg>
-          微信排版
+          WeEdit
         </a></h1>
         <div class="toolbar-divider"></div>
         <div class="format-selector">
@@ -298,6 +298,24 @@
             <span>预览</span>
           </div>
           <div class="panel-header-right">
+            <button id="btnTogglePreviewVisibility" class="btn-small" title="隐藏预览">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20C5 20 1 12 1 12a20.29 20.29 0 0 1 5.06-5.94"></path>
+                <path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a20.49 20.49 0 0 1-2.16 3.19"></path>
+                <path d="M14.12 14.12A3 3 0 0 1 9.88 9.88"></path>
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+              隐藏预览
+            </button>
+            <button id="btnTogglePreviewPosition" class="btn-small" title="切换预览位置">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="17 1 21 5 17 9"></polyline>
+                <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+                <polyline points="7 23 3 19 7 15"></polyline>
+                <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+              </svg>
+              预览靠左
+            </button>
             <span id="compatStatus" class="compat-status" title="微信兼容性检查结果"></span>
             <button id="btnToggleOutline" class="btn-small" title="文章大纲">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -313,11 +331,9 @@
                 <line x1="12" y1="18" x2="12.01" y2="18"></line>
               </svg>
               <select id="deviceSelect">
-                <option value="375">iPhone SE</option>
-                <option value="390">iPhone 14</option>
-                <option value="430">iPhone 14 Pro Max</option>
-                <option value="744">iPad Mini</option>
-                <option value="desktop">桌面端</option>
+                <option value="phone">手机</option>
+                <option value="tablet">平板</option>
+                <option value="desktop">电脑</option>
               </select>
             </div>
           </div>
@@ -574,7 +590,7 @@
         </div>
         <div>
           <label style="display:block;font-size:12px;color:var(--text-tertiary);margin-bottom:4px">Authorization Header（可选）</label>
-          <input type="text" id="imgBedAuth" placeholder="Bearer xxx" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--surface);color:var(--text);outline:none;font-family:inherit">
+          <input type="password" id="imgBedAuth" placeholder="Bearer xxx" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--surface);color:var(--text);outline:none;font-family:inherit">
         </div>
         <div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">
           配置后，粘贴/拖拽的图片会自动上传到图床并替换为外链。<br>
@@ -660,7 +676,7 @@
       <div class="publish-pane" id="publishPaneWechat">
         <h4>使用说明</h4>
         <ol>
-          <li>点击下方「复制HTML」按钮</li>
+          <li>点击下方「复制富文本」按钮</li>
           <li>打开微信公众号后台编辑器</li>
           <li>粘贴到编辑器中即可</li>
         </ol>
@@ -672,7 +688,7 @@
               <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
             </svg>
-            复制HTML
+            复制富文本
           </button>
         </div>
       </div>
