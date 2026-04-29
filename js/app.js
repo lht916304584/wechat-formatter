@@ -85,6 +85,7 @@
   const ARTICLES_KEY = 'wechat-articles';
   const CUSTOM_TEMPLATES_KEY = 'wechat-custom-templates';
   const FAVORITES_KEY = 'wechat-template-favorites';
+  const CUSTOM_STYLE_KEY = 'wechat-custom-style-config';
   const IDB_NAME = 'weedit-local-store';
   const IDB_VERSION = 1;
   const IDB_STORE = 'kv';
@@ -95,6 +96,7 @@
     ARTICLES_KEY,
     CUSTOM_TEMPLATES_KEY,
     FAVORITES_KEY,
+    CUSTOM_STYLE_KEY,
   ];
   const PERSISTENT_LABELS = {
     [STORAGE_KEY]: '草稿',
@@ -103,6 +105,7 @@
     [ARTICLES_KEY]: '文章库',
     [CUSTOM_TEMPLATES_KEY]: '自定义模板',
     [FAVORITES_KEY]: '模板收藏',
+    [CUSTOM_STYLE_KEY]: '自定义样式',
   };
   const persistentCache = Object.create(null);
   let persistentDb = null;
@@ -653,6 +656,31 @@
     return 'text';
   }
 
+  function getCustomStyleConfig() {
+    try {
+      return JSON.parse(getPersistentItem(CUSTOM_STYLE_KEY) || '{}');
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function saveCustomStyleConfig(config) {
+    persistLargeItem(CUSTOM_STYLE_KEY, JSON.stringify(config || {}), '自定义样式');
+  }
+
+  function sanitizeCustomCss(css) {
+    return String(css || '')
+      .replace(/<\/style/gi, '<\\/style')
+      .replace(/@import[^;]+;/gi, '')
+      .replace(/url\s*\(\s*javascript:[^)]+\)/gi, '');
+  }
+
+  function applyCustomCssToHtml(html) {
+    const config = getCustomStyleConfig();
+    if (!config.enabled || !config.css || !String(config.css).trim()) return html;
+    return `<style data-weedit-custom-style>${sanitizeCustomCss(config.css)}</style>${html}`;
+  }
+
   // ===== 核心渲染 =====
   function updatePreview() {
     let content = editor.getValue();
@@ -668,7 +696,7 @@
       if (fmt === 'markdown' && detectFormat(content) === 'text') {
         content = smartConvertTextToMarkdown(content);
       }
-      currentHtml = renderContent(content, fmt);
+      currentHtml = applyCustomCssToHtml(renderContent(content, fmt));
       preview.innerHTML = currentHtml;
       checkWechatCompatibility();
       updateOutline();
@@ -1150,6 +1178,28 @@
     updateStats();
   });
 
+  function ensurePaletteSelectOptions() {
+    if (!templateSelect || typeof PALETTES === 'undefined') return;
+    const existing = new Set(Array.from(templateSelect.options).map(opt => opt.value));
+    let raphaelGroup = templateSelect.querySelector('optgroup[label="Raphael 30 套样式"]');
+    Object.entries(PALETTES).forEach(([key, palette]) => {
+      if (existing.has(key)) return;
+      if (palette.source === 'Raphael') {
+        if (!raphaelGroup) {
+          raphaelGroup = document.createElement('optgroup');
+          raphaelGroup.label = 'Raphael 30 套样式';
+          templateSelect.appendChild(raphaelGroup);
+        }
+        raphaelGroup.appendChild(new Option(palette.label, key));
+      } else {
+        templateSelect.appendChild(new Option(palette.label, key));
+      }
+      existing.add(key);
+    });
+  }
+
+  ensurePaletteSelectOptions();
+
   templateSelect.addEventListener('change', () => {
     setActivePalette(templateSelect.value);
     updatePreview();
@@ -1622,6 +1672,118 @@
     deepseek: { url: 'https://api.deepseek.com/v1/chat/completions', models: ['deepseek-chat', 'deepseek-reasoner'] },
   };
 
+  const AI_FUNC_DESCRIPTIONS = {
+    article: '根据主题生成完整初稿',
+    polish: '优化表达与段落结构',
+    continue: '按现有语气继续展开',
+    css: '生成公众号内联样式',
+    translate: '中英互译并保留语气',
+    summary: '提炼核心观点和金句',
+    explain: '把复杂内容讲清楚',
+    cover: '输出封面设计提示词',
+  };
+
+  const AI_PROVIDER_HINTS = {
+    custom: '自定义服务需要填写兼容 OpenAI Chat Completions 的接口地址。',
+    siliconflow: 'SiliconFlow 可领取免费额度，填写 API Key 后即可使用推荐模型。',
+    zhipu: '智谱 AI 适合中文写作和长文生成。',
+    openai: 'OpenAI 模型质量稳定，请确认账号额度和网络可用。',
+    deepseek: 'DeepSeek 适合写作、推理和代码相关任务。',
+  };
+
+  function enhanceAiModalLayout() {
+    if (!aiWriterModal) return;
+
+    aiWriterModal.querySelectorAll('.ai-tab').forEach(tab => {
+      if (tab.querySelector('.ai-tab-icon')) return;
+      const icon = tab.dataset.aitab === 'settings' ? '⚙' : '🤖';
+      tab.innerHTML = `<span class="ai-tab-icon">${icon}</span><span>${tab.textContent.trim()}</span>`;
+    });
+
+    if (aiFuncGrid && !document.getElementById('aiPaneIntro')) {
+      const intro = document.createElement('div');
+      intro.className = 'ai-pane-intro';
+      intro.id = 'aiPaneIntro';
+      intro.innerHTML = '<strong>选择一个写作动作</strong><span>根据当前目标生成、润色、续写或整理内容</span>';
+      aiFuncGrid.parentElement.insertBefore(intro, aiFuncGrid);
+    }
+
+    if (aiFuncGrid) {
+      aiFuncGrid.querySelectorAll('.ai-func-card').forEach(card => {
+        if (card.querySelector('.ai-func-desc')) return;
+        const desc = document.createElement('span');
+        desc.className = 'ai-func-desc';
+        desc.textContent = AI_FUNC_DESCRIPTIONS[card.dataset.func] || '';
+        card.appendChild(desc);
+      });
+    }
+
+    const streamRow = aiWriterModal.querySelector('.ai-stream-row');
+    const streamLabel = streamRow && streamRow.querySelector('.ai-stream-label');
+    if (streamRow && streamLabel && !streamRow.querySelector('.ai-stream-copy')) {
+      const copy = document.createElement('div');
+      copy.className = 'ai-stream-copy';
+      streamLabel.replaceWith(copy);
+      copy.appendChild(streamLabel);
+      const sub = document.createElement('span');
+      sub.textContent = '开启后实时显示生成内容';
+      copy.appendChild(sub);
+      streamLabel.textContent = '流式输出';
+    }
+
+    if (aiChatInput && !aiWriterModal.querySelector('.ai-input-label')) {
+      const label = document.createElement('label');
+      label.className = 'ai-input-label';
+      label.htmlFor = 'aiChatInput';
+      label.textContent = '输入内容';
+      aiChatInput.parentElement.insertBefore(label, aiChatInput);
+      aiChatInput.rows = 4;
+    }
+    if (btnAiSend) btnAiSend.textContent = '生成内容';
+
+    const settingsBody = aiWriterModal.querySelector('.ai-settings-body');
+    if (settingsBody && !settingsBody.querySelector('.ai-settings-note')) {
+      const note = document.createElement('div');
+      note.className = 'ai-settings-note';
+      note.textContent = 'API Key 仅保存在当前浏览器本地。切换服务商后会自动填入推荐接口和模型。';
+      settingsBody.insertBefore(note, settingsBody.firstChild);
+    }
+
+    const provider = document.getElementById('aiProvider');
+    if (provider && !document.getElementById('aiProviderHint')) {
+      const hint = document.createElement('div');
+      hint.id = 'aiProviderHint';
+      hint.className = 'ai-provider-hint';
+      provider.closest('.ai-setting-item')?.after(hint);
+    }
+
+    const apiKey = document.getElementById('aiApiKey');
+    if (apiKey && !document.getElementById('btnToggleAiKey')) {
+      const wrap = document.createElement('div');
+      wrap.className = 'ai-key-input-wrap';
+      apiKey.parentNode.insertBefore(wrap, apiKey);
+      wrap.appendChild(apiKey);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.id = 'btnToggleAiKey';
+      btn.className = 'ai-key-toggle';
+      btn.title = '显示或隐藏 API Key';
+      btn.textContent = '👁';
+      btn.addEventListener('click', () => {
+        apiKey.type = apiKey.type === 'password' ? 'text' : 'password';
+      });
+      wrap.appendChild(btn);
+    }
+
+    updateAiProviderHint();
+  }
+
+  function updateAiProviderHint() {
+    const provider = document.getElementById('aiProvider');
+    const hint = document.getElementById('aiProviderHint');
+    if (provider && hint) hint.textContent = AI_PROVIDER_HINTS[provider.value] || AI_PROVIDER_HINTS.custom;
+  }
+
   function getAiConfig() {
     try { return JSON.parse(localStorage.getItem('ai-writer-config') || '{}'); } catch { return {}; }
   }
@@ -1673,6 +1835,7 @@
     if (modelSel && customModelRow) {
       customModelRow.style.display = modelSel.value === 'custom' ? 'flex' : 'none';
     }
+    updateAiProviderHint();
     updateAiConfigStatus();
     updateAiErrorBanner();
   }
@@ -1752,6 +1915,9 @@
     aiStreamingBubble = null;
     if (btnAiInsert) btnAiInsert.disabled = true;
     aiChatMessages.innerHTML = '';
+    if (aiFuncGrid) {
+      aiFuncGrid.querySelectorAll('.ai-func-card').forEach(c => c.classList.remove('active'));
+    }
     if (aiFuncGrid) aiFuncGrid.style.display = 'grid';
     if (aiChatInput) aiChatInput.placeholder = '描述你想写的文章话题...';
   }
@@ -1949,6 +2115,11 @@
     aiConversation = [];
     aiPhase = 'chatting';
     aiGeneratedContent = '';
+    if (aiFuncGrid) {
+      aiFuncGrid.querySelectorAll('.ai-func-card').forEach(c => {
+        c.classList.toggle('active', c.dataset.func === funcId);
+      });
+    }
 
     // For functions that need editor content, auto-prefill
     const editorContent = editor.getValue().trim();
@@ -1994,11 +2165,13 @@
     });
     updateAiConfigStatus();
     updateAiErrorBanner();
+    updateAiProviderHint();
     showToast('AI 配置已保存');
   }
 
   // AI writer event bindings
   if (aiWriterModal) {
+    enhanceAiModalLayout();
     document.getElementById('btnAiWriter')?.addEventListener('click', () => {
       loadAiConfig();
       switchAiTab('assistant');
@@ -2073,6 +2246,7 @@
         if (customOpt) modelSel.appendChild(customOpt);
         modelSel.value = preset.models[0];
       }
+      updateAiProviderHint();
     });
 
     document.getElementById('aiModelSelect')?.addEventListener('change', (e) => {
@@ -2772,6 +2946,25 @@
     renderArticlesTab();
   };
 
+  function getTemplateVisual(category, name) {
+    const text = `${category || ''} ${name || ''}`;
+    if (/教育|学习|教程|方法/.test(text)) return 'education';
+    if (/科技|技术|AI|代码|数据/.test(text)) return 'tech';
+    if (/商业|职场|管理|增长/.test(text)) return 'business';
+    if (/节日|年度|总结/.test(text)) return 'festival';
+    if (/生活|旅行|观点|新闻/.test(text)) return 'life';
+    return 'custom';
+  }
+
+  function renderTemplateIllustration(type) {
+    return `<div class="tpl-illustration tpl-illustration-${type}">
+      <span class="tpl-shape tpl-shape-a"></span>
+      <span class="tpl-shape tpl-shape-b"></span>
+      <span class="tpl-shape tpl-shape-c"></span>
+      <span class="tpl-shape tpl-shape-d"></span>
+    </div>`;
+  }
+
   function renderTemplatesTab() {
     let customTemplates = [];
     let favorites = [];
@@ -2780,7 +2973,15 @@
       favorites = JSON.parse(getPersistentItem(FAVORITES_KEY) || '[]');
     } catch (e) {}
 
-    const categories = ['全部', '收藏', '教育', '科技', '商业', '节日', '生活'];
+    const categories = [
+      { label: '全部', icon: '▦' },
+      { label: '收藏', icon: '☆' },
+      { label: '教育', icon: '⌂' },
+      { label: '科技', icon: '⚙' },
+      { label: '商业', icon: '▤' },
+      { label: '节日', icon: '✦' },
+      { label: '生活', icon: '☕' },
+    ];
     const currentFilter = window._tplFilter || '全部';
     const searchQuery = (window._tplSearch || '').toLowerCase().trim();
 
@@ -2815,13 +3016,11 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
           <input type="text" class="tpl-search" placeholder="搜索模板..." value="${escapeHtml(searchQuery)}">
         </div>
-        <button class="tpl-new-btn" onclick="window._spSaveCustomTemplate()" title="新建模板">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-        </button>
       </div>
       <div class="tpl-categories">
-        ${categories.map(c => `<button class="tpl-category-tab ${c === currentFilter ? 'active' : ''}" data-cat="${c}">${c}</button>`).join('')}
+        ${categories.map(c => `<button class="tpl-category-tab ${c.label === currentFilter ? 'active' : ''}" data-cat="${c.label}"><span>${c.icon}</span>${c.label}</button>`).join('')}
       </div>
+      <button class="tpl-create-btn" onclick="window._spSaveCustomTemplate()">+ 新建模板</button>
       <div class="tpl-grid">
     `;
 
@@ -2832,14 +3031,15 @@
         const t = item.data;
         const key = item.type === 'system' ? `s:${item.index}` : `c:${item.index}`;
         const isFav = favorites.includes(key);
-        const cover = t.coverColor || 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
         const category = t.category || '自定义';
+        const visual = getTemplateVisual(category, t.name);
         const onclick = item.type === 'system' ? `window._spUseTemplate(${item.index})` : `window._spUseCustomTemplate(${item.index})`;
         const previewClick = `window._spPreviewTemplate('${item.type}', ${item.index})`;
         const delBtn = item.type === 'custom' ? `<button class="tpl-del-btn" onclick="event.stopPropagation();window._spDeleteCustomTemplate(${item.index})" title="删除"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>` : '';
         html += `
           <div class="tpl-card">
-            <div class="tpl-card-cover" style="background:${cover}">
+            <div class="tpl-card-cover tpl-cover-${visual}">
+              ${renderTemplateIllustration(visual)}
               <span class="tpl-card-icon">${t.icon || '📝'}</span>
               <button class="tpl-fav-btn ${isFav ? 'active' : ''}" data-fav-key="${key}" title="收藏">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="${isFav ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
@@ -3063,8 +3263,23 @@
   window._spRestoreVersion = function(id) { restoreVersion(id); renderHistoryTab(); };
   window._spClearHistory = function() { clearAllVersions(); renderHistoryTab(); };
 
+  function getActivePaletteKey() {
+    return Object.keys(PALETTES).find(key => PALETTES[key] === TECH_PALETTE) || templateSelect.value || 'tech';
+  }
+
+  function renderPaletteSwatch(pal) {
+    return `<span class="style-swatch" style="--c1:${pal.bgLight};--c2:${pal.primary};--c3:${pal.accent};--c4:${pal.textMain}"></span>`;
+  }
+
   function renderStylesTab() {
     const p = TECH_PALETTE;
+    const activeSubTab = window._styleTab || 'templates';
+    const customStyle = getCustomStyleConfig();
+    const tabs = [
+      { id: 'templates', label: '模板' },
+      { id: 'elements', label: '元素' },
+      { id: 'css', label: 'CSS' },
+    ];
     const colorFields = [
       { key: 'primary', label: '主色', value: p.primary },
       { key: 'accent', label: '强调色', value: p.accent },
@@ -3076,81 +3291,113 @@
       { key: 'textMute', label: '弱文字', value: p.textMute },
       { key: 'border', label: '边框色', value: p.border },
     ];
-
     const spacingFields = [
       { key: '_lineHeight', label: '行高', value: (p._lineHeight || 1.75), min: 1.2, max: 2.5, step: 0.05 },
-      { key: '_paraSpacing', label: '段间距 (px)', value: (p._paraSpacing || 16), min: 4, max: 40, step: 2 },
-      { key: '_fontSize', label: '正文字号 (px)', value: (p._fontSize || 15), min: 12, max: 20, step: 1 },
-      { key: '_h2Size', label: 'H2 字号 (px)', value: (p._h2Size || 20), min: 16, max: 28, step: 1 },
-      { key: '_h3Size', label: 'H3 字号 (px)', value: (p._h3Size || 17), min: 14, max: 24, step: 1 },
+      { key: '_paraSpacing', label: '段间距', value: (p._paraSpacing || 16), min: 4, max: 40, step: 2 },
+      { key: '_fontSize', label: '正文字号', value: (p._fontSize || 15), min: 12, max: 20, step: 1 },
+      { key: '_h2Size', label: '二级标题', value: (p._h2Size || 20), min: 16, max: 28, step: 1 },
+      { key: '_h3Size', label: '三级标题', value: (p._h3Size || 17), min: 14, max: 24, step: 1 },
     ];
+    const builtIn = Object.entries(PALETTES).filter(([, pal]) => pal.source !== 'Raphael');
+    const raphael = Object.entries(PALETTES).filter(([, pal]) => pal.source === 'Raphael');
 
-    let html = `<div class="sp-section-title">快速主题</div>`;
-    html += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">`;
-    Object.keys(PALETTES).forEach(name => {
-      const pal = PALETTES[name];
-      const isActive = TECH_PALETTE === pal || (TECH_PALETTE.primary === pal.primary && TECH_PALETTE.label === pal.label);
-      html += `<div style="display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:6px;cursor:pointer;border:1px solid ${isActive ? 'var(--primary)' : 'var(--border)'};background:${isActive ? 'var(--primary-light)' : 'transparent'};transition:all 0.15s" onclick="window._spSetPalette('${name}')">
-        <span style="width:12px;height:12px;border-radius:3px;background:${pal.primary}"></span>
-        <span style="font-size:11px;color:var(--text-secondary)">${pal.label}</span>
+    let html = `<div class="style-panel-head">
+      <div class="style-panel-title">
+        <span>自定义样式</span>
+        <label class="ai-switch"><input type="checkbox" id="customStyleEnabled" ${customStyle.enabled !== false ? 'checked' : ''}><span class="ai-switch-slider"></span></label>
+      </div>
+      <div class="style-tabs">${tabs.map(tab => `<button class="style-tab ${tab.id === activeSubTab ? 'active' : ''}" data-style-tab="${tab.id}">${tab.label}</button>`).join('')}</div>
+    </div>`;
+
+    if (activeSubTab === 'templates') {
+      html += `<div class="style-group-title">系统模板</div><div class="style-preset-list">`;
+      builtIn.forEach(([key, pal]) => {
+        const active = key === getActivePaletteKey();
+        html += `<button class="style-preset-card ${active ? 'active' : ''}" onclick="window._spSetPalette('${key}')">
+          ${renderPaletteSwatch(pal)}
+          <span><strong>${escapeHtml(pal.label)}</strong><small>${escapeHtml(pal.description || '内置微信排版风格')}</small></span>
+        </button>`;
+      });
+      html += `</div><div class="style-group-title">Raphael 30 套样式</div><div class="style-preset-list">`;
+      raphael.forEach(([key, pal]) => {
+        const active = key === getActivePaletteKey();
+        html += `<button class="style-preset-card ${active ? 'active' : ''}" onclick="window._spSetPalette('${key}')">
+          ${renderPaletteSwatch(pal)}
+          <span><strong>${escapeHtml(pal.label)}</strong><small>${escapeHtml(pal.description || '')}</small></span>
+        </button>`;
+      });
+      html += `</div>`;
+    }
+
+    if (activeSubTab === 'elements') {
+      html += `<div class="style-group-title">颜色</div>`;
+      colorFields.forEach(f => {
+        html += `<div class="style-control-row">
+          <label>${f.label}</label>
+          <input type="color" value="${f.value}" data-style-color="${f.key}">
+          <input class="sp-setting-input" value="${f.value}" data-style-text="${f.key}">
+        </div>`;
+      });
+      html += `<div class="style-group-title">排版</div>`;
+      spacingFields.forEach(f => {
+        html += `<div class="style-range-row">
+          <label>${f.label}<span data-style-val="${f.key}">${f.value}</span></label>
+          <input type="range" min="${f.min}" max="${f.max}" step="${f.step}" value="${f.value}" data-style-range="${f.key}">
+        </div>`;
+      });
+      html += `<div class="style-actions"><button class="sp-btn" onclick="window._spApplyStyles()">应用样式</button><button class="sp-btn danger" onclick="window._spResetStyles()">重置</button></div>`;
+    }
+
+    if (activeSubTab === 'css') {
+      html += `<div class="style-css-card">
+        <label class="sp-setting-label">自定义 CSS</label>
+        <textarea id="customStyleCss" class="style-css-editor" spellcheck="false" placeholder=".preview-content p { letter-spacing: 0; }">${escapeHtml(customStyle.css || '')}</textarea>
+        <div class="style-actions"><button class="sp-btn" onclick="window._spSaveCustomCss()">保存 CSS</button><button class="sp-btn danger" onclick="window._spClearCustomCss()">清空</button></div>
       </div>`;
-    });
-    html += `</div>`;
-
-    html += `<div class="sp-section-title">颜色设置</div>`;
-    colorFields.forEach(f => {
-      html += `<div class="sp-setting-row" style="display:flex;align-items:center;gap:8px">
-        <label class="sp-setting-label" style="margin:0;min-width:60px">${f.label}</label>
-        <input type="color" value="${f.value}" style="width:32px;height:28px;border:1px solid var(--border);border-radius:4px;background:var(--surface-dark);cursor:pointer;padding:1px" data-style-color="${f.key}">
-        <input class="sp-setting-input" style="flex:1" value="${f.value}" data-style-text="${f.key}">
-      </div>`;
-    });
-
-    html += `<div class="sp-section-title" style="margin-top:12px">排版间距</div>`;
-    spacingFields.forEach(f => {
-      html += `<div class="sp-setting-row" style="display:flex;align-items:center;gap:8px">
-        <label class="sp-setting-label" style="margin:0;min-width:70px">${f.label}</label>
-        <input type="range" min="${f.min}" max="${f.max}" step="${f.step}" value="${f.value}" style="flex:1;accent-color:var(--primary)" data-style-range="${f.key}">
-        <span style="min-width:28px;text-align:right;font-size:12px;color:var(--text-secondary)" data-style-val="${f.key}">${f.value}</span>
-      </div>`;
-    });
-
-    html += `<div style="display:flex;gap:8px;margin-top:12px">`;
-    html += `<button class="sp-btn" style="flex:1" onclick="window._spApplyStyles()">应用样式</button>`;
-    html += `<button class="sp-btn" style="flex:1;border-color:#f87171;color:#f87171" onclick="window._spResetStyles()">重置</button>`;
-    html += `</div>`;
+    }
 
     sidePanelContent.innerHTML = html;
 
-    // Bind color inputs
+    sidePanelContent.querySelectorAll('.style-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        window._styleTab = btn.dataset.styleTab;
+        renderStylesTab();
+      });
+    });
+    document.getElementById('customStyleEnabled')?.addEventListener('change', (e) => {
+      saveCustomStyleConfig({ ...getCustomStyleConfig(), enabled: e.target.checked });
+      updatePreview();
+    });
     sidePanelContent.querySelectorAll('[data-style-color]').forEach(colorInput => {
       const key = colorInput.dataset.styleColor;
       const textInput = sidePanelContent.querySelector(`[data-style-text="${key}"]`);
       colorInput.addEventListener('input', () => {
         if (textInput) textInput.value = colorInput.value;
         TECH_PALETTE[key] = colorInput.value;
+        updatePreview();
       });
       if (textInput) {
         textInput.addEventListener('change', () => {
           colorInput.value = textInput.value;
           TECH_PALETTE[key] = textInput.value;
+          updatePreview();
         });
       }
     });
-
-    // Bind range inputs
     sidePanelContent.querySelectorAll('[data-style-range]').forEach(rangeInput => {
       const key = rangeInput.dataset.styleRange;
       const valSpan = sidePanelContent.querySelector(`[data-style-val="${key}"]`);
       rangeInput.addEventListener('input', () => {
         if (valSpan) valSpan.textContent = rangeInput.value;
         TECH_PALETTE[key] = parseFloat(rangeInput.value);
+        updatePreview();
       });
     });
   }
 
   window._spSetPalette = function(name) {
     setActivePalette(name);
+    ensurePaletteSelectOptions();
     templateSelect.value = name;
     updatePreview();
     renderStylesTab();
@@ -3167,6 +3414,21 @@
     updatePreview();
     renderStylesTab();
     showToast('样式已重置');
+  };
+
+  window._spSaveCustomCss = function() {
+    const css = document.getElementById('customStyleCss')?.value || '';
+    saveCustomStyleConfig({ ...getCustomStyleConfig(), enabled: true, css });
+    updatePreview();
+    renderStylesTab();
+    showToast('自定义 CSS 已保存');
+  };
+
+  window._spClearCustomCss = function() {
+    saveCustomStyleConfig({ ...getCustomStyleConfig(), css: '' });
+    updatePreview();
+    renderStylesTab();
+    showToast('自定义 CSS 已清空');
   };
 
   function renderImagesTab() {
@@ -3978,6 +4240,8 @@
   // ===== AI Writer toolbar button =====
   if (btnAiWriterToolbar) {
     btnAiWriterToolbar.addEventListener('click', () => {
+      loadAiConfig();
+      switchAiTab('assistant');
       openModal(aiWriterModal);
     });
   }

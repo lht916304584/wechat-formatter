@@ -152,6 +152,60 @@ const PALETTES = {
   },
 };
 
+const RAPHAEL_THEME_SEEDS = [
+  ["raphael-apple","Mac","纯净现代的极致留白，适合日常记录的万能首选","#111","#0066cc","#000","#ffffff","#f5f5f7","#1d1d1f","#f5f5f7","#666","#e0e0e0","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif"],
+  ["raphael-claude","Claude","温润的燕麦卡其色底，适合深度长文或文学哲思","#b75c3d","#b75c3d","#b75c3d","#f8f6f0","#f0ece4","#2b2b2b","#2b2b2b","#666","#e0ddd6","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif"],
+  ["raphael-wechat","微信公众号原生","原汁原味的官方绿底纹，满足传统阅读习惯的稳妥之选","#111","#07c160","#07c160","#ffffff","#f0f7f2","#333333","#f0f7f2","#666","#d8e8dc","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif"],
+  ["raphael-media","NYT","经典米黄色新闻纸，极强的严肃深度报道专业感","#111","#326891","#000","#fdfaf6","#f0ede8","#000000","#f0ede8","#666","#d5cfc5","Georgia, \"Times New Roman\", Times, serif"],
+  ["raphael-medium","Medium","简约柔和的西式博客排版，适合生活志与随笔沉淀","#111","#1a8917","#000","#fcfcfc","#f2f3f5","#242424","#242424","#666","#e0e0e0","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif"],
+  ["raphael-stripe","Stripe","前沿的硅谷极客商务风，高悬浮感与高亮视觉系","#111","#635bff","#0a2540","#f6f9fc","#eef0ff","#425466","#eef0ff","#666","#dde0f0","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif"],
+  ["raphael-workspace","飞书效率","沉稳严谨的深蓝配色，适合职场效率与管理方法论","#111","#3370ff","#000","#f7f8fa","#edf1ff","#1f2329","#edf1ff","#666","#dee0e3","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif"],
+  ["raphael-linear","Linear","纯正的暗夜赛博极客风，编程教程与开发日志的终极归宿","#eee","#5e6ad2","#fff","#101114","#1a1a1a","#f1f1f2","#1a1a1a","#bbb","#333","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif"],
+  ["raphael-retro","Retro","做旧羊皮纸搭配火漆红，适合人文历史与艺术鉴赏","#8c2211","#8c2211","#8c2211","#f4ecd8","#efe5cc","#2b2621","#efe5cc","#666","#d4c9ae","Georgia, \"Times New Roman\", Times, serif"],
+  ["raphael-bloomberg","Bloomberg","还原华尔街古老金融终端机，硬派科技代码展示专属","#eee","#ff8c00","#15fa52","#000000","#0a0a0a","#15fa52","#0a0a0a","#bbb","#333","\"SF Mono\", \"Courier New\", Courier, monospace"],
+  ["raphael-notion","Notion","极致克制的黑白灰，纯粹信息密度与无干扰写作","#37352f","#37352f","#37352f","#ffffff","#f7f6f3","#37352f","#37352f","#37352f","#e9e9e7","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif"],
+  ["raphael-github","GitHub","开发者最熟悉的阅读界面，README 即视感","#1f2328","#0969da","#1f2328","#ffffff","#f5f5f5","#1f2328","#1f2328","#1f2328","#d1d9e0","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Helvetica, Arial, sans-serif"],
+  ["raphael-sspai","少数派","中文数字媒体标杆，经典红色标识与精致排版","#333333","#d71a1b","#d71a1b","#ffffff","#fef7f7","#333333","#fef7f7","#666","#f0e0e0","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif"],
+  ["raphael-dracula","Dracula","暗紫色赛博吸血鬼美学，粉青撞色的视觉冲击","#ff79c6","#8be9fd","#ffb86c","#282a36","#44475a","#f8f8f2","#44475a","#8be9fd","#6272a4","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif"],
+  ["raphael-nord","Nord","北欧极地冰霜蓝，冷静克制的极光美学","#81a1c1","#88c0d0","#eceff4","#2e3440","#3b4252","#d8dee9","#3b4252","#a3be8c","#4c566a","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif"],
+  ["raphael-sakura","樱花","柔粉色系日式美学，温柔感性的少女心表达","#c44569","#c44569","#c44569","#fef7f9","#fceef2","#4a3f4f","#fceef2","#9b7fa7","#f0d4dd","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif"],
+  ["raphael-ocean","深海","午夜深蓝配珊瑚橘，沉浸式的海洋系叙事感","#feca57","#ff6b6b","#feca57","#0c2233","#152d42","#c8d6e5","#152d42","#78e0a0","#1e3a52","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif"],
+  ["raphael-mint","薄荷","清凉薄荷绿底色，适合生活方式与健康类内容","#1a7a5a","#1a7a5a","#1a7a5a","#f0faf5","#e0f5ec","#2d4a3e","#e0f5ec","#5a8a72","#c8e6d8","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif"],
+  ["raphael-sunset","日落","暖琥珀色调的黄昏意境，散文游记与情感表达","#c0582a","#c0582a","#c0582a","#fdf6ee","#f8ead6","#3d2c1e","#f8ead6","#8a6d4b","#e8d4b8","Georgia, \"Times New Roman\", Times, serif"],
+  ["raphael-monokai","Monokai","经典代码编辑器配色，程序员的终极浪漫","#a6e22e","#66d9ef","#f92672","#272822","#3e3d32","#f8f8f2","#3e3d32","#e6db74","#49483e","\"SF Mono\", \"Fira Code\", Consolas, monospace"],
+  ["raphael-solarized","Solarized","经典暖色调开发者配色，柔和护眼的阅读体验","#268bd2","#268bd2","#cb4b16","#fdf6e3","#eee8d5","#657b83","#eee8d5","#93a1a1","#ddd6c1","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif"],
+  ["raphael-cyberpunk","Cyberpunk","霓虹闪烁的赛博朋克世界，品红与青的极致碰撞","#05d9e8","#05d9e8","#ff2a6d","#0d0221","#1a0a3e","#e0e0ff","#1a0a3e","#05d9e8","#2a1a4e","\"SF Mono\", \"Fira Code\", Consolas, monospace"],
+  ["raphael-ink","水墨","纯粹的黑白水墨风，零色彩干扰的极简阅读","#000000","#111111","#000000","#ffffff","#f0f0f0","#111111","#111111","#555555","#cccccc","Georgia, \"Times New Roman\", Times, serif"],
+  ["raphael-lavender","薰衣草","梦幻紫色调的浪漫氛围，诗意与灵感的温柔表达","#7c5cad","#6b4c9a","#6b4c9a","#f5f0ff","#ece4ff","#3d3155","#ece4ff","#8a6dba","#ddd0f0","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif"],
+  ["raphael-forest","密林","深邃的暗绿色丛林，自然与神秘感的沉浸式叙事","#a8d8a8","#7dce82","#7dce82","#1a2e1a","#243824","#c8dcc8","#243824","#a0c8a0","#3a5a3a","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif"],
+  ["raphael-glacier","冰川","清冽的冰蓝色调，冷静理性的科技分析与报告","#1976d2","#1976d2","#1565c0","#eef4fa","#e1eef6","#2c3e50","#e1eef6","#5a7a9a","#c8dce8","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif"],
+  ["raphael-coffee","咖啡","醇厚巧克力棕色调，午后咖啡馆的温暖书卷气","#5d4037","#6d4c41","#4e342e","#f5efe6","#ece2d4","#3e2723","#ece2d4","#795548","#d7ccc8","Georgia, \"Times New Roman\", Times, serif"],
+  ["raphael-bauhaus","Bauhaus","包豪斯三原色风格，红蓝黄碰撞的现代主义先锋","#004d9f","#004d9f","#e30613","#ffffff","#fff4d6","#1a1a1a","#fff4d6","#555","#1a1a1a","\"Helvetica Neue\", Helvetica, Arial, sans-serif"],
+  ["raphael-copper","赤铜","暗夜中的青铜古韵，深沉温暖的金属质感暗色调","#c49070","#e8a87c","#e8a87c","#1c1410","#2a1e16","#d4b896","#2a1e16","#b89878","#3a2a1e","Georgia, \"Times New Roman\", Times, serif"],
+  ["raphael-pastel","彩虹糖","多彩柔和的马卡龙色系，活泼甜美的少年感表达","#7ab8d0","#7ab8d0","#e07a94","#fefcf8","#f0ecff","#4a4a5a","#f0ecff","#9b8ec4","#e8e0f0","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif"],
+];
+
+RAPHAEL_THEME_SEEDS.forEach(([id, label, description, primary, accent, pop, bgLight, bgCard, textMain, textSub, textMute, border, fontStack]) => {
+  PALETTES[id] = {
+    label,
+    description,
+    source: 'Raphael',
+    primary,
+    accent,
+    pop,
+    bgLight,
+    bgCard,
+    textMain,
+    textSub,
+    textMute,
+    white: '#FFFFFF',
+    border,
+    fontStack,
+    coverLabel: `${label.toUpperCase()} · RAPHAEL`,
+    signatureLabel: label,
+  };
+});
+
 let TECH_PALETTE = PALETTES.tech;
 
 function setActivePalette(name) {
