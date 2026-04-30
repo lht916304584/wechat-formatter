@@ -681,6 +681,55 @@
     return `<style data-weedit-custom-style>${sanitizeCustomCss(config.css)}</style>${html}`;
   }
 
+  function inlineCustomCssForWechat(html) {
+    if (!/<style[^>]*data-weedit-custom-style/i.test(html || '')) return html;
+    const host = document.createElement('div');
+    host.id = 'preview';
+    host.className = 'preview-content';
+    host.style.cssText = 'position:fixed;left:-99999px;top:0;width:677px;pointer-events:none;';
+    host.innerHTML = html;
+    document.body.appendChild(host);
+    try {
+      host.querySelectorAll('style[data-weedit-custom-style]').forEach(styleEl => {
+        const sheet = styleEl.sheet;
+        const rules = sheet ? Array.from(sheet.cssRules || []) : [];
+        rules.forEach(rule => {
+          if (rule.type !== CSSRule.STYLE_RULE || !rule.selectorText) return;
+          let nodes = [];
+          try {
+            nodes = Array.from(host.querySelectorAll(rule.selectorText));
+          } catch (e) {
+            return;
+          }
+          nodes.forEach(node => {
+            for (let i = 0; i < rule.style.length; i++) {
+              const prop = rule.style[i];
+              node.style.setProperty(prop, rule.style.getPropertyValue(prop), rule.style.getPropertyPriority(prop));
+            }
+          });
+        });
+        styleEl.remove();
+      });
+      return host.innerHTML;
+    } finally {
+      document.body.removeChild(host);
+    }
+  }
+
+  function getWechatReadyHtml() {
+    return wrapForWechat(inlineCustomCssForWechat(currentHtml));
+  }
+
+  if (location.protocol === 'file:' || ['localhost', '127.0.0.1'].includes(location.hostname)) {
+    Object.defineProperty(window, '_weeditTest', {
+      configurable: true,
+      value: {
+        getWechatReadyHtml: () => getWechatReadyHtml(),
+        getCurrentHtml: () => currentHtml,
+      },
+    });
+  }
+
   // ===== 核心渲染 =====
   function updatePreview() {
     let content = editor.getValue();
@@ -747,6 +796,13 @@
     // 检查动画/过渡（微信不支持）
     if (/animation\s*:|@keyframes|transition\s*:/.test(currentHtml)) {
       issues.push('包含 CSS 动画/过渡，微信不支持');
+    }
+    const customStyle = getCustomStyleConfig();
+    if (customStyle.enabled !== false && customStyle.css && String(customStyle.css).trim()) {
+      const unsupported = /@media|@keyframes|:hover|:before|:after|::|position\s*:\s*(fixed|sticky)|display\s*:\s*grid/i.test(customStyle.css);
+      issues.push(unsupported
+        ? '自定义 CSS 会在复制时尽量内联，复杂选择器或伪类可能无法完全保留'
+        : '自定义 CSS 会在复制时自动转换为内联样式');
     }
 
     if (issues.length === 0) {
@@ -910,7 +966,7 @@
       showToast('请先输入内容');
       return;
     }
-    const wrapped = wrapForWechat(currentHtml);
+    const wrapped = getWechatReadyHtml();
     await copyRichHtml(wrapped, '已复制，可直接粘贴到微信公众号编辑器');
   }
 
@@ -920,14 +976,14 @@
       showToast('请先输入内容');
       return;
     }
-    const wrapped = wrapForWechat(currentHtml);
+    const wrapped = getWechatReadyHtml();
     htmlOutput.value = wrapped;
     openModal(htmlModal);
   }
 
   function downloadHtml() {
     if (!currentHtml) return;
-    const wrapped = wrapForWechat(currentHtml);
+    const wrapped = getWechatReadyHtml();
     const fullHtml = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
 <body style="max-width:677px;margin:0 auto;padding:20px;">${wrapped}</body></html>`;
@@ -1213,7 +1269,7 @@
   if (btnViewHtml) {
     btnViewHtml.addEventListener('click', () => {
       if (!currentHtml) { showToast('请先输入内容'); return; }
-      htmlOutput.value = wrapForWechat(currentHtml);
+      htmlOutput.value = getWechatReadyHtml();
       openModal(htmlModal);
     });
   }
@@ -3722,8 +3778,12 @@
       }
     }, 2000);
   }
-  // Open default tab
-  toggleSidePanel('articles');
+  // Open default tab on wider screens; keep mobile focused on the editor first.
+  if (!window.matchMedia('(max-width: 768px)').matches) {
+    toggleSidePanel('articles');
+  } else {
+    activeTab = null;
+  }
 
   // ===== Command Palette =====
   const commandPalette = document.getElementById('commandPalette');
@@ -3738,7 +3798,10 @@
       { id: 'copy-wechat', label: '复制到微信', icon: '📋', action: copyForWechat },
       { id: 'export-html', label: '导出 HTML', icon: '💾', action: exportHtml },
       { id: 'export-pdf', label: '导出 PDF', icon: '📄', action: () => window.print() },
-      { id: 'view-source', label: '查看 HTML 源码', icon: '🔍', action: () => openModal(htmlModal) },
+      { id: 'view-source', label: '查看 HTML 源码', icon: '🔍', action: () => {
+        if (htmlOutput) htmlOutput.value = getWechatReadyHtml();
+        openModal(htmlModal);
+      } },
       { id: 'import-file', label: '导入文件', icon: '📂', action: () => fileInput.click() },
       { id: 'save', label: '保存内容', icon: '✅', shortcut: 'Ctrl+S', action: () => { saveContent(); showToast('已保存'); } },
       { id: 'find', label: '查找替换', icon: '🔎', shortcut: 'Ctrl+F', action: () => openFindBar() },
@@ -4217,7 +4280,7 @@
   if (btnPublishCopy) {
     btnPublishCopy.addEventListener('click', async () => {
       if (!currentHtml) { showToast('请先输入内容'); return; }
-      const html = wrapForWechat(currentHtml);
+      const html = getWechatReadyHtml();
       await copyRichHtml(html, '已复制富文本，可直接粘贴到微信公众号编辑器');
     });
   }

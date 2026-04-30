@@ -1882,8 +1882,66 @@ body {
   .toolbar-left { flex-wrap: wrap; }
   .toolbar-right { flex-wrap: wrap; }
   .menu-bar { display: none; }
-  .activity-bar { display: none; }
-  .side-panel { display: none !important; }
+  .activity-bar {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    z-index: 60;
+    width: auto;
+    height: 48px;
+    flex-direction: row;
+    justify-content: space-around;
+    padding: 6px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: rgba(19, 21, 28, 0.92);
+    box-shadow: var(--shadow-lg);
+    backdrop-filter: blur(16px);
+  }
+  .activity-bar-spacer { display: none; }
+  .activity-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+  }
+  .activity-btn.active::before { display: none; }
+  .side-panel {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: 68px;
+    z-index: 59;
+    width: auto;
+    max-height: min(66vh, 560px);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+    transform: translateY(14px);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.18s ease, opacity 0.18s ease;
+  }
+  .side-panel.open {
+    display: flex;
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .side-panel-header {
+    min-height: 42px;
+    padding: 10px 14px;
+  }
+  .side-panel-content {
+    max-height: calc(min(66vh, 560px) - 42px);
+  }
+  .preview-panel {
+    padding-bottom: 62px;
+  }
+  [data-theme="light"] .activity-bar {
+    background: rgba(255, 255, 255, 0.94);
+  }
 }
 
 /* Reverse layout for preview position toggle */
