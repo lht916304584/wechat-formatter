@@ -9,7 +9,11 @@ function assert(condition, message) {
 
 (async () => {
   const browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 900 },
+    permissions: ['clipboard-read', 'clipboard-write'],
+  });
+  const page = await context.newPage();
   const errors = [];
   page.on('console', msg => {
     if (msg.type() === 'error') errors.push(msg.text());
@@ -35,6 +39,13 @@ function assert(condition, message) {
     document.getElementById('inputFormat').value = 'markdown';
   });
   await page.waitForTimeout(800);
+  const defaultSkillHtml = await page.evaluate(() => window._weeditTest.getWechatReadyHtml());
+  assert(defaultSkillHtml.includes('TECH NOTES'), 'default style should render the skill cover label');
+  assert(defaultSkillHtml.includes('<section'), 'wechat-ready HTML should use section blocks for WeChat paste compatibility');
+  assert(defaultSkillHtml.includes('style='), 'default skill style should use inline styles');
+  assert(defaultSkillHtml.includes('愿这篇技术笔记'), 'default style should append the skill outro');
+  assert(!/linear-gradient/i.test(defaultSkillHtml), 'wechat-ready HTML should avoid gradient backgrounds');
+  assert(!/class=|\bid=|gap:|<style/i.test(defaultSkillHtml), 'default skill HTML should avoid class/id/style-tag/gap output');
 
   await page.click('.activity-btn[data-tab="templates"]');
   const templateState = await page.evaluate(() => {
@@ -78,6 +89,21 @@ function assert(condition, message) {
   const exported = await page.evaluate(() => window._weeditTest.getWechatReadyHtml());
   assert(exported.includes('color: rgb(18, 52, 86)') || exported.includes('color: #123456'), 'custom CSS was not inlined for exported HTML');
   assert(!exported.includes('data-weedit-custom-style'), 'custom style tag should be removed from exported HTML');
+
+  await page.click('#btnPublish');
+  await page.click('#btnPublishCopy');
+  const clipboardState = await page.evaluate(async () => {
+    const items = await navigator.clipboard.read();
+    const first = items[0];
+    if (!first) return { types: [], html: '' };
+    const html = first.types.includes('text/html')
+      ? await (await first.getType('text/html')).text()
+      : '';
+    return { types: first.types, html };
+  });
+  assert(clipboardState.types.includes('text/html'), 'wechat copy should write text/html to clipboard');
+  assert(clipboardState.html.includes('style='), 'wechat copy HTML should preserve inline styles');
+  await page.click('#btnClosePublish');
 
   await page.setViewportSize({ width: 390, height: 780 });
   await page.waitForTimeout(300);

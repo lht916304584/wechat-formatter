@@ -716,8 +716,33 @@
     }
   }
 
+  function normalizeHtmlForWechatPaste(html) {
+    const template = document.createElement('template');
+    template.innerHTML = html || '';
+
+    template.content.querySelectorAll('[style]').forEach(el => {
+      const style = el.getAttribute('style') || '';
+      const normalized = style
+        .replace(/background\s*:\s*linear-gradient\([^;]+/gi, (value) => {
+          const color = value.match(/#[0-9a-f]{3,8}/i);
+          return `background:${color ? color[0] : '#1B3A5C'}`;
+        })
+        .replace(/background-image\s*:\s*linear-gradient\([^;]+;?/gi, '');
+      el.setAttribute('style', normalized);
+    });
+
+    template.content.querySelectorAll('div').forEach(div => {
+      const section = document.createElement('section');
+      Array.from(div.attributes).forEach(attr => section.setAttribute(attr.name, attr.value));
+      while (div.firstChild) section.appendChild(div.firstChild);
+      div.replaceWith(section);
+    });
+
+    return template.innerHTML;
+  }
+
   function getWechatReadyHtml() {
-    return wrapForWechat(inlineCustomCssForWechat(currentHtml));
+    return normalizeHtmlForWechatPaste(wrapForWechat(inlineCustomCssForWechat(currentHtml)));
   }
 
   if (location.protocol === 'file:' || ['localhost', '127.0.0.1'].includes(location.hostname)) {
@@ -921,9 +946,75 @@
   });
 
   // ===== 复制到微信 =====
-  async function copyRichHtml(html, successMessage) {
+  function copyHtmlBySelection(html, sourceNode) {
+    const tempDiv = sourceNode || document.createElement('div');
+    const shouldRemoveTemp = !sourceNode;
+    if (shouldRemoveTemp) {
+      tempDiv.setAttribute('contenteditable', 'true');
+      tempDiv.innerHTML = html;
+      tempDiv.style.cssText = [
+        'position:fixed',
+        'left:16px',
+        'top:0',
+        'width:677px',
+        'padding:20px',
+        'opacity:1',
+        'pointer-events:auto',
+        'z-index:99999',
+        'background:#fff',
+        'color:#000',
+        'font-size:16px',
+        'line-height:1.7',
+      ].join(';');
+    }
+    const previousEditable = tempDiv.getAttribute('contenteditable');
+    if (!shouldRemoveTemp) tempDiv.setAttribute('contenteditable', 'true');
+
+    const selection = window.getSelection();
+    const savedRanges = [];
+    if (selection) {
+      for (let i = 0; i < selection.rangeCount; i++) {
+        savedRanges.push(selection.getRangeAt(i).cloneRange());
+      }
+    }
+    const activeElement = document.activeElement;
+
+    if (shouldRemoveTemp) document.body.appendChild(tempDiv);
     try {
-      if (navigator.clipboard && window.ClipboardItem && navigator.clipboard.write) {
+      const range = document.createRange();
+      range.selectNodeContents(tempDiv);
+      if (selection) {
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      return document.execCommand('copy');
+    } finally {
+      if (selection) {
+        selection.removeAllRanges();
+        savedRanges.forEach(range => selection.addRange(range));
+      }
+      if (shouldRemoveTemp) {
+        document.body.removeChild(tempDiv);
+      } else {
+        if (previousEditable === null) tempDiv.removeAttribute('contenteditable');
+        else tempDiv.setAttribute('contenteditable', previousEditable);
+      }
+      if (activeElement && typeof activeElement.focus === 'function') {
+        activeElement.focus({ preventScroll: true });
+      }
+    }
+  }
+
+  async function copyRichHtml(html, successMessage, sourceNode) {
+    try {
+      let copied = false;
+      try {
+        copied = copyHtmlBySelection(html, sourceNode);
+      } catch (e) {
+        copied = false;
+      }
+
+      if (!copied && navigator.clipboard && window.ClipboardItem && navigator.clipboard.write) {
         const htmlBlob = new Blob([html], { type: 'text/html' });
         const textBlob = new Blob([stripHtmlToText(html)], { type: 'text/plain' });
         await navigator.clipboard.write([
@@ -932,20 +1023,11 @@
             'text/plain': textBlob,
           }),
         ]);
-      } else {
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = html;
-        tempDiv.style.position = 'fixed';
-        tempDiv.style.left = '-9999px';
-        document.body.appendChild(tempDiv);
-        const range = document.createRange();
-        range.selectNodeContents(tempDiv);
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
-        document.execCommand('copy');
-        sel.removeAllRanges();
-        document.body.removeChild(tempDiv);
+        copied = true;
+      }
+
+      if (!copied) {
+        throw new Error('Copy command was not accepted by this browser');
       }
       showToast(successMessage || '已复制，可直接粘贴到微信公众号编辑器');
       return true;
@@ -4243,7 +4325,7 @@
     if (!publishModal) return;
     // Refresh preview
     if (publishPreview) {
-      publishPreview.innerHTML = preview.innerHTML;
+      publishPreview.innerHTML = getWechatReadyHtml();
     }
     publishModal.style.display = 'flex';
     // Reset to first tab
@@ -4281,7 +4363,7 @@
     btnPublishCopy.addEventListener('click', async () => {
       if (!currentHtml) { showToast('请先输入内容'); return; }
       const html = getWechatReadyHtml();
-      await copyRichHtml(html, '已复制富文本，可直接粘贴到微信公众号编辑器');
+      await copyRichHtml(html, '已复制富文本，可直接粘贴到微信公众号编辑器', publishPreview);
     });
   }
   if (btnPublishExportHtml) {

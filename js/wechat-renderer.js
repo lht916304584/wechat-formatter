@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 微信排版渲染器
  * 将 Markdown 映射到技术笔记元件库
  * marked v12 使用位置参数
@@ -94,6 +94,7 @@ function createWechatRenderer() {
   const renderer = new marked.Renderer();
   let isFirstHeading = true;
   let lastHeadingLevel = 0;
+  let coverRendered = false;
 
   // ===== 标题 =====
   // h1 → 封面 (B01)，h2 → 二级标题 (B03)，h3 → 三级标题 (B04)
@@ -101,6 +102,7 @@ function createWechatRenderer() {
     lastHeadingLevel = depth;
     if (depth === 1 && isFirstHeading) {
       isFirstHeading = false;
+      coverRendered = true;
       return Components.cover(text, '', '', '');
     }
     if (depth === 1) {
@@ -286,14 +288,35 @@ function createWechatRenderer() {
     return `<${tag}>${text}</${tag}>`;
   };
 
-  return { renderer, reset() { isFirstHeading = true; lastHeadingLevel = 0; } };
+  return {
+    renderer,
+    reset() {
+      isFirstHeading = true;
+      lastHeadingLevel = 0;
+      coverRendered = false;
+    },
+    hasCover() {
+      return coverRendered;
+    },
+  };
+}
+
+function extractArticleTitle(content) {
+  const lines = String(content || '').split('\n');
+  for (const line of lines) {
+    const title = line.replace(/^#{1,6}\s+/, '').trim();
+    if (title && !/^```/.test(title) && !/^[-*+]\s/.test(title) && !/^\d+\.\s/.test(title)) {
+      return title.replace(/[*`_>]/g, '').slice(0, 48);
+    }
+  }
+  return '技术笔记';
 }
 
 /**
  * 渲染 Markdown 为微信兼容 HTML（技术笔记风格）
  */
 function renderMarkdown(content) {
-  const { renderer, reset } = createWechatRenderer();
+  const { renderer, reset, hasCover } = createWechatRenderer();
   reset();
 
   marked.setOptions({
@@ -351,24 +374,23 @@ function renderMarkdown(content) {
       }
       html = html.replace(`MATHPLACEHOLDER${i}ENDMATH`, rendered);
     } else if (p.type === 'mermaid') {
-      const mermaidId = 'mermaid-' + Date.now() + '-' + i;
-      html = html.replace(`MERMAIDPLACEHOLDER${i}ENDMERMAID`,
-        `<div class="mermaid-placeholder" id="${mermaidId}" data-code="${escapeHtml(p.content)}" style="margin:16px 0;text-align:center;">
-          <div style="padding:20px;background:#f8f9fa;border-radius:8px;border:1px solid #e2e8f0;color:#64748b;font-size:13px;">
-            Mermaid 图表加载中...
-          </div>
-        </div>`);
+      html = html.replace(`MERMAIDPLACEHOLDER${i}ENDMERMAID`, Components.codeBlock(p.content, 'mermaid'));
     }
   }
 
-  // 追加签名档
+  if (!hasCover()) {
+    html = Components.cover(extractArticleTitle(content), '', '', '') + html;
+  }
+
+  html += Components.outro('愿这篇技术笔记，能帮你把复杂问题拆得更清楚。');
   html += Components.signature();
 
   return html;
 }
 
 /**
- * 异步渲染页面中的 Mermaid 图表
+ * 异步渲染页面中的 Mermaid 图表。
+ * Skill 默认输出不再生成 class/id/data-code，这里只兼容历史内容。
  */
 async function renderMermaidDiagrams() {
   if (typeof mermaid === 'undefined') return;
@@ -405,7 +427,6 @@ function smartConvertTextToMarkdown(text) {
       continue;
     }
 
-    // 已有 Markdown 语法保留原样
     if (/^#{1,6}\s/.test(trimmed) || /^```/.test(trimmed) || /^\s*>\s/.test(trimmed) ||
         /^[-*+]\s/.test(trimmed) || /^\d+\.\s/.test(trimmed)) {
       out.push(line);
@@ -413,7 +434,6 @@ function smartConvertTextToMarkdown(text) {
       continue;
     }
 
-    // 分隔线
     if (/^[-=_*~#]{3,}$/.test(trimmed)) {
       out.push('---');
       afterDivider = true;
@@ -421,21 +441,18 @@ function smartConvertTextToMarkdown(text) {
       continue;
     }
 
-    // 第一行内容 → 封面（h1 触发 cover）
     if (isFirstContent) {
       out.push(`# ${trimmed}`);
       isFirstContent = false;
       continue;
     }
 
-    // 步骤标记：第一步：xxx
     const stepMatch = trimmed.match(/^第[一二三四五六七八九十\d]+步[：:]\s*(.*)/);
     if (stepMatch) {
       out.push(`1. **${stepMatch[1]}**`);
       continue;
     }
 
-    // Callout 检测
     if (/\bNOTE\b|💡/.test(trimmed)) {
       out.push(`> 💡 NOTE：${trimmed.replace(/💡\s*/, '').replace(/\bNOTE\b[：:]?\s*/, '')}`);
       continue;
@@ -449,52 +466,44 @@ function smartConvertTextToMarkdown(text) {
       continue;
     }
 
-    // 引用：引号包裹的长句
     if (/^[""""「].*[""""」]$/.test(trimmed) && trimmed.length > 10 && trimmed.length < 200) {
       out.push(`> ${trimmed.replace(/^[""「]/, '').replace(/[""」]$/, '')}`);
       continue;
     }
 
-    // 格言：含 —— 归属
     const mottoMatch = trimmed.match(/^(.+?)\s*[—\-]{2,}\s*(.+)$/);
     if (mottoMatch && trimmed.length < 120) {
       out.push(`> ${mottoMatch[1].trim()} —— ${mottoMatch[2].trim()}`);
       continue;
     }
 
-    // 无序列表：- • · 开头
     if (/^[-•·]\s/.test(trimmed)) {
       out.push('- ' + trimmed.replace(/^[-•·]\s+/, ''));
       continue;
     }
 
-    // 任务列表：☐ ☑ 开头
     if (/^[☐☑]\s/.test(trimmed)) {
       const checked = trimmed.startsWith('☑');
       out.push((checked ? '- [x] ' : '- [ ] ') + trimmed.replace(/^[☐☑]\s+/, ''));
       continue;
     }
 
-    // 有序列表：数字开头
     if (/^\d+[\.、)\)]\s/.test(trimmed)) {
       out.push(trimmed.replace(/^(\d+)[\.、)\)]\s+/, '$1. '));
       continue;
     }
 
-    // 中文编号标题
     if (/^[一二三四五六七八九十百]+[、．.]/.test(trimmed) || /^第[一二三四五六七八九十百\d]+[章节篇部]/.test(trimmed)) {
       out.push(`## ${trimmed}`);
       continue;
     }
 
-    // 分隔线后的短行 → h2
     if (afterDivider) {
       out.push(`## ${trimmed}`);
       afterDivider = false;
       continue;
     }
 
-    // 标题启发式：短行、无结尾标点
     const sentEnd = /[。；…]/.test(trimmed.slice(-1));
     if (!sentEnd && trimmed.length <= 25) {
       out.push(`## ${trimmed}`);
@@ -505,7 +514,6 @@ function smartConvertTextToMarkdown(text) {
       continue;
     }
 
-    // 独立 URL
     if (/^https?:\/\/\S+$/.test(trimmed)) {
       out.push(`[${trimmed}](${trimmed})`);
       continue;
@@ -565,5 +573,6 @@ function renderContent(content, format) {
  * 为复制到微信包装
  */
 function wrapForWechat(html) {
-  return `<div style="max-width:677px;margin:0 auto;font-family:${TECH_PALETTE.fontStack};">${html}</div>`;
+  const fontStack = String(TECH_PALETTE.fontStack || '-apple-system, PingFang SC, Helvetica Neue, Arial, sans-serif').replace(/"/g, "'");
+  return `<div style="max-width:677px;margin:0 auto;font-family:${fontStack};">${html}</div>`;
 }

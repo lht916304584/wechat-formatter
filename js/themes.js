@@ -331,9 +331,20 @@ const Components = {
   // B01 · 封面
   cover(title, subtitle, date, author) {
     const p = TECH_PALETTE;
+    const finalDate = date || new Date().toLocaleDateString('zh-CN').replace(/\//g, '.');
+    const coverAuthor = author || '作者';
+    return `<section style="background:${p.primary};padding:48px 32px 40px;text-align:center;border-radius:0;">
+  <p style="font-size:11px;letter-spacing:3px;color:${p.pop};text-transform:uppercase;margin:0 0 16px;">${p.coverLabel}</p>
+  <p style="font-size:28px;font-weight:700;color:${p.white};line-height:1.4;margin:0 0 12px;">${title}</p>
+  ${subtitle ? `<p style="font-size:13px;color:#A8C8E8;margin:0 0 24px;">${subtitle}</p>` : '<p style="height:12px;margin:0;"></p>'}
+  <p style="display:inline-block;border:1px solid ${p.pop};padding:4px 14px;border-radius:20px;font-size:11px;color:${p.pop};letter-spacing:1px;margin:0;">${finalDate} · ${coverAuthor}</p>
+</section>`;
+    const finalAuthor = author || '作者';
     return `<div style="background:linear-gradient(135deg,${p.primary} 0%,${p.accent} 100%);padding:48px 32px 40px;text-align:center;border-radius:0;">
+  <div style="font-size:11px;letter-spacing:3px;color:${p.pop};text-transform:uppercase;margin-bottom:16px;">${p.coverLabel}</div>
   <div style="font-size:28px;font-weight:700;color:${p.white};line-height:1.4;margin-bottom:12px;">${title}</div>
-  ${subtitle ? `<div style="font-size:13px;color:${p.pop};margin-bottom:8px;">${subtitle}</div>` : ''}
+  ${subtitle ? `<div style="font-size:13px;color:#A8C8E8;margin-bottom:24px;">${subtitle}</div>` : '<div style="height:12px;"></div>'}
+  <div style="display:inline-block;border:1px solid ${p.pop};padding:4px 14px;border-radius:20px;font-size:11px;color:${p.pop};letter-spacing:1px;">${finalDate} · ${finalAuthor}</div>
 </div>`;
   },
 
@@ -442,8 +453,11 @@ const Components = {
   // B12 · signature 签名档
   signature(author, date) {
     const p = TECH_PALETTE;
-    return `<div style="margin-top:32px;padding:16px 0;border-top:1px solid ${p.border};text-align:center;">
-  <div style="display:inline-block;width:40px;height:3px;background:${p.accent};border-radius:2px;"></div>
+    const finalDate = date || new Date().toLocaleDateString('zh-CN').replace(/\//g, '.');
+    const finalAuthor = author || '作者';
+    return `<div style="margin-top:32px;padding:16px 20px;border-top:1px solid ${p.border};display:flex;justify-content:space-between;align-items:center;">
+  <div style="font-size:12px;color:${p.textMute};">${finalAuthor} · ${p.signatureLabel}</div>
+  <div style="font-size:11px;color:#A0AEC0;letter-spacing:1px;">${finalDate}</div>
 </div>`;
   },
 
@@ -510,19 +524,8 @@ const Components = {
 
   // T02 with highlight.js · 语法高亮代码块
   codeBlockHighlighted(code, lang) {
-    let highlighted;
-    try {
-      if (lang && typeof hljs !== 'undefined' && hljs.getLanguage(lang)) {
-        highlighted = hljs.highlight(code, { language: lang }).value;
-      } else if (typeof hljs !== 'undefined') {
-        highlighted = hljs.highlightAuto(code).value;
-      } else {
-        highlighted = code.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      }
-    } catch (e) {
-      highlighted = code.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
-    return Style.codeBox(TECH_PALETTE, lang, `<code class="hljs">${highlighted}</code>`);
+    const escaped = code.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return Style.codeBox(TECH_PALETTE, lang, `<code style="color:#A8C8E8;">${escaped}</code>`);
   },
 
   // 行内代码
@@ -591,9 +594,9 @@ const Components = {
       const textStyle = checked
         ? `font-size:14px;color:${p.textMute};line-height:1.8;text-decoration:line-through;`
         : `font-size:14px;color:${p.textMain};line-height:1.8;`;
-      return `<div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:10px;">
+      return `<div style="display:flex;align-items:flex-start;margin-bottom:10px;">
         ${icon}
-        <div style="${textStyle}">${item.text}</div>
+        <div style="margin-left:10px;${textStyle}">${item.text}</div>
       </div>`;
     }).join('');
     return `<div style="margin:16px 0;padding:16px 20px;background:${p.bgLight};border-radius:8px;">${itemsHtml}</div>`;
