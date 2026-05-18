@@ -1,5 +1,6 @@
 {
   "scripts": {
+    "start": "node scripts/start-local.js",
     "test:smoke": "node tests/smoke.js"
   },
   "dependencies": {
