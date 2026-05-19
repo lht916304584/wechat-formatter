@@ -1,5 +1,6 @@
 {
   "scripts": {
+    "build": "node scripts/build-cloudflare.js",
     "start": "node scripts/start-local.js",
     "test:smoke": "node tests/smoke.js"
   },
