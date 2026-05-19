@@ -77,16 +77,16 @@ function listen(port, attemptsLeft = 20) {
       listen(port + 1, attemptsLeft - 1);
       return;
     }
-    console.error('[WeEdit] 启动失败:', err.message);
+    console.error('[ZgEdit] 启动失败:', err.message);
     process.exit(1);
   });
 
   server.listen(port, host, () => {
     const url = `http://${host}:${port}/index.html`;
     console.log('');
-    console.log('[WeEdit] 本地服务已启动');
-    console.log(`[WeEdit] 访问地址: ${url}`);
-    console.log('[WeEdit] 关闭此窗口即可停止服务');
+    console.log('[ZgEdit] 本地服务已启动');
+    console.log(`[ZgEdit] 访问地址: ${url}`);
+    console.log('[ZgEdit] 关闭此窗口即可停止服务');
     console.log('');
     openBrowser(url);
   });

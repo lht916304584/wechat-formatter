@@ -1,8 +1,8 @@
-# WeEdit 本地启动说明
+# ZgEdit 本地启动说明
 
 ## 一键启动
 
-双击 `start-weedit.bat`。
+双击 `start-zgedit.bat`。
 
 启动后会自动打开浏览器，地址类似：
 

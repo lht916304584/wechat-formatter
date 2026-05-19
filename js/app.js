@@ -305,14 +305,14 @@
       if (value !== null && value !== undefined) items[key] = value;
     });
     const backup = {
-      app: 'WeEdit',
+      app: 'ZgEdit',
       type: 'local-content-backup',
       version: 1,
       exportedAt: new Date().toISOString(),
       items,
     };
     const date = new Date().toISOString().slice(0, 10);
-    downloadJson(`weedit-backup-${date}.json`, backup);
+    downloadJson(`zgedit-backup-${date}.json`, backup);
     showToast('本地文章数据已导出');
   }
 

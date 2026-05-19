@@ -73,9 +73,9 @@ if (-not $started) {
 
 $Url = "http://$HostName`:$Port/index.html"
 Write-Host ""
-Write-Host "[WeEdit] Local server started"
-Write-Host "[WeEdit] URL: $Url"
-Write-Host "[WeEdit] Close this window to stop the server"
+Write-Host "[ZgEdit] Local server started"
+Write-Host "[ZgEdit] URL: $Url"
+Write-Host "[ZgEdit] Close this window to stop the server"
 Write-Host ""
 Start-Process $Url
 
