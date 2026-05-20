@@ -3,7 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0b0d12">
+  <meta name="application-name" content="ZgEdit">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="ZgEdit">
   <title>ZgEdit 微信排版工具</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/zgedit-icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/main.css">
   <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
@@ -104,6 +110,14 @@
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
               <span>导入文档</span>
             </div>
+            <div class="toolbar-dropdown-item" data-action="import-package">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+              <span>导入文章包</span>
+            </div>
+            <div class="toolbar-dropdown-item" data-action="export-package">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><polyline points="7 10 12 15 17 10"></polyline><path d="M5 21h14"></path><path d="M5 18h14"></path></svg>
+              <span>导出文章包</span>
+            </div>
             <div class="toolbar-dropdown-item" data-action="export-html">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
               <span>导出 HTML</span>
@@ -150,7 +164,7 @@
             </div>
           </div>
         </div>
-        <input type="file" id="fileInput" accept=".md,.markdown,.txt,.html,.htm" style="display:none">
+        <input type="file" id="fileInput" accept=".md,.markdown,.txt,.html,.htm,.json,.zgedit" style="display:none">
       </div>
     </header>
 
@@ -418,6 +432,31 @@
     </div>
   </div>
 
+  <!-- 历史版本对比弹窗 -->
+  <div id="historyCompareModal" class="modal" role="dialog" aria-label="历史版本对比" style="display:none">
+    <div class="modal-content history-compare-modal">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 6h13"></path>
+            <path d="M8 12h13"></path>
+            <path d="M8 18h13"></path>
+            <path d="M3 6h.01"></path>
+            <path d="M3 12h.01"></path>
+            <path d="M3 18h.01"></path>
+          </svg>
+          版本对比
+        </div>
+        <button class="modal-close" id="btnCloseHistoryCompare"></button>
+      </div>
+      <div class="modal-body history-compare-body" id="historyCompareBody"></div>
+      <div class="modal-footer">
+        <button id="btnHistoryCompareClose" class="btn btn-outline" style="margin-right:auto">取消</button>
+        <button id="btnHistoryCompareRestore" class="btn btn-primary">恢复此版本</button>
+      </div>
+    </div>
+  </div>
+
   <!-- AI 助手弹窗 -->
   <div id="aiWriterModal" class="modal" role="dialog" aria-label="AI 助手" style="display:none">
     <div class="modal-content ai-modal-content">
@@ -681,6 +720,14 @@
           <li>打开微信公众号后台编辑器</li>
           <li>粘贴到编辑器中即可</li>
         </ol>
+        <h4>发布信息</h4>
+        <div class="publish-meta" id="publishMeta"></div>
+        <h4>内容体检</h4>
+        <div class="publish-quality" id="publishQuality"></div>
+        <h4>发布前检查</h4>
+        <div class="publish-preflight" id="publishPreflight"></div>
+        <h4>复制诊断</h4>
+        <div class="publish-diagnostics" id="publishDiagnostics"></div>
         <h4>预览效果</h4>
         <div class="publish-preview-box" id="publishPreview"></div>
         <div class="publish-actions">
@@ -695,6 +742,10 @@
       </div>
       <!-- 导出文件 -->
       <div class="publish-pane" id="publishPaneExport" style="display:none">
+        <div class="publish-export-note">
+          <strong>导出中心</strong>
+          <span>按用途选择文件：发布留 HTML，二次编辑留 Markdown，跨设备迁移留文章包。</span>
+        </div>
         <div class="publish-export-grid">
           <div class="publish-export-card" id="btnPublishExportHtml">
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -702,6 +753,7 @@
               <polyline points="14 2 14 8 20 8"></polyline>
             </svg>
             <span>导出 HTML 文件</span>
+            <small>保留微信内联样式</small>
           </div>
           <div class="publish-export-card" id="btnPublishExportPdf">
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -711,6 +763,33 @@
               <polyline points="9 15 12 18 15 15"></polyline>
             </svg>
             <span>导出 PDF 文件</span>
+            <small>用于归档或预览</small>
+          </div>
+          <div class="publish-export-card" id="btnPublishExportMarkdown">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 4h16v16H4z"></path>
+              <path d="M8 16V8l4 5 4-5v8"></path>
+            </svg>
+            <span>导出 Markdown</span>
+            <small>保留原始正文</small>
+          </div>
+          <div class="publish-export-card" id="btnPublishExportPackage">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+              <path d="M3.3 7 12 12l8.7-5"></path>
+              <path d="M12 22V12"></path>
+            </svg>
+            <span>导出文章包</span>
+            <small>可重新导入 ZgEdit</small>
+          </div>
+          <div class="publish-export-card" id="btnPublishExportBackup">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>完整备份</span>
+            <small>草稿、文章库、模板</small>
           </div>
         </div>
       </div>
@@ -823,6 +902,7 @@
           document.documentElement.dataset.theme = 'light';
         }
         const monacoTheme = savedTheme === 'light' ? 'weedit-light' : 'weedit-dark';
+        const mobileEditorQuery = window.matchMedia('(max-width: 768px)');
 
         window.editor = monaco.editor.create(container, {
           value: '',
@@ -844,7 +924,7 @@
           parameterHints: { enabled: false },
           suggestOnTriggerCharacters: false,
           hover: { enabled: true },
-          minimap: { enabled: true, scale: 1, showSlider: 'mouseover' },
+          minimap: { enabled: !mobileEditorQuery.matches, scale: 1, showSlider: 'mouseover' },
           scrollbar: {
             vertical: 'auto',
             horizontal: 'auto',
@@ -863,6 +943,20 @@
             indentation: true,
           },
         });
+        const applyMobileEditorOptions = function(event) {
+          const isMobile = event.matches;
+          window.editor.updateOptions({
+            minimap: { enabled: !isMobile, scale: 1, showSlider: 'mouseover' },
+            lineNumbersMinChars: isMobile ? 3 : 5,
+            padding: isMobile ? { top: 12, bottom: 12 } : { top: 16, bottom: 16 },
+          });
+        };
+        applyMobileEditorOptions(mobileEditorQuery);
+        if (mobileEditorQuery.addEventListener) {
+          mobileEditorQuery.addEventListener('change', applyMobileEditorOptions);
+        } else if (mobileEditorQuery.addListener) {
+          mobileEditorQuery.addListener(applyMobileEditorOptions);
+        }
 
         // Register markdown-specific completion for headers
         monaco.languages.registerCompletionItemProvider('markdown', {

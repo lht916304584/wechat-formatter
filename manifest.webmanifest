@@ -1,0 +1,33 @@
+{
+  "name": "ZgEdit 微信排版工具",
+  "short_name": "ZgEdit",
+  "description": "面向微信公众号发布的 Markdown 排版、复制、导出与发布检查工具。",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b0d12",
+  "theme_color": "#0b0d12",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "assets/zgedit-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "打开编辑器",
+      "short_name": "编辑器",
+      "url": "./index.html",
+      "description": "继续编辑和排版微信公众号文章"
+    },
+    {
+      "name": "查看介绍页",
+      "short_name": "介绍",
+      "url": "./landing.html",
+      "description": "查看 ZgEdit 功能介绍"
+    }
+  ]
+}

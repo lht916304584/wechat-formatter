@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="ZgEdit">
+  <rect width="512" height="512" rx="112" fill="#0b0d12"/>
+  <path d="M108 132h212l-137 148h144v64H96v-48l139-150H108v-14Z" fill="#f8fafc"/>
+  <rect x="116" y="360" width="280" height="20" rx="10" fill="#4fd1c5"/>
+  <rect x="348" y="132" width="48" height="212" rx="20" fill="#6366f1"/>
+  <circle cx="372" cy="376" r="22" fill="#d6b56d"/>
+</svg>

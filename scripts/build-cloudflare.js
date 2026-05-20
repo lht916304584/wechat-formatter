@@ -8,6 +8,9 @@ const entries = [
   'index.html',
   'landing.html',
   'article.md',
+  'manifest.webmanifest',
+  'sw.js',
+  'assets',
   'css',
   'js',
 ];

@@ -11,6 +11,11 @@
   const btnExportHtml = document.getElementById('btnExportHtml');
   const btnImportFile = document.getElementById('btnImportFile');
   const btnClear = document.getElementById('btnClear');
+  const historyCompareModal = document.getElementById('historyCompareModal');
+  const historyCompareBody = document.getElementById('historyCompareBody');
+  const btnCloseHistoryCompare = document.getElementById('btnCloseHistoryCompare');
+  const btnHistoryCompareClose = document.getElementById('btnHistoryCompareClose');
+  const btnHistoryCompareRestore = document.getElementById('btnHistoryCompareRestore');
   const deviceSelect = document.getElementById('deviceSelect');
   const editorStatus = document.getElementById('editorStatus');
   const fileInput = document.getElementById('fileInput');
@@ -43,10 +48,20 @@
   const publishModal = document.getElementById('publishModal');
   const btnClosePublish = document.getElementById('btnClosePublish');
   const publishPreview = document.getElementById('publishPreview');
+  const publishMeta = document.getElementById('publishMeta');
+  const publishQuality = document.getElementById('publishQuality');
+  const publishPreflight = document.getElementById('publishPreflight');
+  const publishDiagnostics = document.getElementById('publishDiagnostics');
   const btnPublishCopy = document.getElementById('btnPublishCopy');
   const btnPublishExportHtml = document.getElementById('btnPublishExportHtml');
   const btnPublishExportPdf = document.getElementById('btnPublishExportPdf');
+  const btnPublishExportMarkdown = document.getElementById('btnPublishExportMarkdown');
+  const btnPublishExportPackage = document.getElementById('btnPublishExportPackage');
+  const btnPublishExportBackup = document.getElementById('btnPublishExportBackup');
   let pendingTemplatePreview = null;
+  let lastWechatCopyResult = null;
+  let sidePanelImageRefs = [];
+  let pendingHistoryRestoreId = null;
 
   // ===== Monaco Editor (initialized in index.html) =====
   let editor = window.editor || null;
@@ -297,20 +312,217 @@
     URL.revokeObjectURL(url);
   }
 
-  function exportLocalData() {
+  function downloadTextFile(filename, content, mime = 'text/plain;charset=utf-8') {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function createLocalDataBackup() {
     saveContent();
     const items = {};
     PERSISTENT_KEYS.forEach(key => {
       const value = getPersistentItem(key);
       if (value !== null && value !== undefined) items[key] = value;
     });
-    const backup = {
+    return {
       app: 'ZgEdit',
       type: 'local-content-backup',
       version: 1,
       exportedAt: new Date().toISOString(),
       items,
     };
+  }
+
+  function applyLocalDataBackup(backup) {
+    const items = backup && backup.items;
+    if (!items || typeof items !== 'object') throw new Error('invalid backup');
+    PERSISTENT_KEYS.forEach(key => {
+      if (Object.prototype.hasOwnProperty.call(items, key)) {
+        persistLargeItem(key, String(items[key]), PERSISTENT_LABELS[key]);
+      } else {
+        removePersistentItem(key);
+      }
+    });
+    refreshArticleStateAfterStorageChange();
+  }
+
+  function getPackageTitle(content, fallback) {
+    const firstLine = String(content || '').trim().split('\n')[0] || '';
+    return (firstLine.replace(/^#+\s*/, '').trim() || fallback || '无标题文章').slice(0, 64);
+  }
+
+  function slugifyFilename(value, fallback) {
+    const cleaned = String(value || '')
+      .replace(/^#+\s*/, '')
+      .replace(/[^\u4e00-\u9fa5a-zA-Z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 36);
+    return cleaned || fallback || 'article';
+  }
+
+  function readCustomStyleConfig() {
+    try {
+      return JSON.parse(getPersistentItem(CUSTOM_STYLE_KEY) || '{}');
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function getArticleImageStats(content) {
+    const source = String(content || '');
+    const markdownImages = source.match(/!\[[^\]]*]\([^)]+\)/g) || [];
+    const htmlImages = source.match(/<img\b[^>]*>/gi) || [];
+    const embedded = source.match(/data:image\//gi) || [];
+    return {
+      total: markdownImages.length + htmlImages.length,
+      embedded: embedded.length,
+    };
+  }
+
+  function createArticlePackage() {
+    if (typeof saveToArticle === 'function') saveToArticle();
+    const content = editorGetValue();
+    const currentArticle = ArticleManager.getCurrent();
+    const title = getPackageTitle(content, currentArticle && currentArticle.title);
+    const html = currentHtml ? getWechatReadyHtml() : '';
+    const imageStats = getArticleImageStats(content);
+    return {
+      app: 'ZgEdit',
+      type: 'article-package',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      article: {
+        id: currentArticle ? currentArticle.id : null,
+        title,
+        content,
+        format: inputFormat.value || 'markdown',
+        theme: templateSelect.value || '',
+        wordTarget: wordTarget ? wordTarget.value : '',
+        customStyle: readCustomStyleConfig(),
+        html,
+        updatedAt: Date.now(),
+      },
+      stats: {
+        characters: content.length,
+        words: content.trim() ? content.trim().split(/\s+/).length : 0,
+        images: imageStats.total,
+        embeddedImages: imageStats.embedded,
+        htmlSize: html ? new Blob([html]).size : 0,
+      },
+      compatibility: html ? getWechatCompatibilityIssues(html).map(item => ({
+        type: item.type,
+        message: item.message,
+      })) : [],
+    };
+  }
+
+  function exportArticlePackage() {
+    const content = editorGetValue();
+    if (!content.trim()) {
+      showToast('请先输入内容');
+      return;
+    }
+    const data = createArticlePackage();
+    const date = new Date().toISOString().slice(0, 10);
+    downloadJson(`zgedit-${slugifyFilename(data.article.title, 'article')}-${date}.zgedit.json`, data);
+    showToast('文章包已导出');
+  }
+
+  function createMarkdownExport() {
+    const content = editorGetValue();
+    return {
+      title: getPackageTitle(content, 'article'),
+      content,
+      format: inputFormat.value || 'markdown',
+      exportedAt: new Date().toISOString(),
+    };
+  }
+
+  function exportMarkdownFile() {
+    const data = createMarkdownExport();
+    if (!data.content.trim()) {
+      showToast('请先输入内容');
+      return;
+    }
+    const date = new Date().toISOString().slice(0, 10);
+    const ext = data.format === 'html' ? 'html' : 'md';
+    const mime = data.format === 'html' ? 'text/html;charset=utf-8' : 'text/markdown;charset=utf-8';
+    downloadTextFile(`zgedit-${slugifyFilename(data.title, 'article')}-${date}.${ext}`, data.content, mime);
+    showToast(data.format === 'html' ? '原始 HTML 已导出' : 'Markdown 已导出');
+  }
+
+  function applyArticlePackage(data) {
+    const article = data && data.article;
+    if (!article || typeof article.content !== 'string') throw new Error('invalid article package');
+    if (typeof saveToArticle === 'function') saveToArticle();
+    const title = getPackageTitle(article.content, article.title);
+    const id = ArticleManager.create(title);
+    ArticleManager.save(id, {
+      title,
+      content: article.content,
+      format: article.format || 'markdown',
+      theme: article.theme || templateSelect.value,
+      packageImportedAt: Date.now(),
+    });
+    ArticleManager.setCurrent(id);
+    editorSetValue(article.content || '');
+    inputFormat.value = article.format || 'markdown';
+    if (article.theme && Array.from(templateSelect.options).some(option => option.value === article.theme)) {
+      templateSelect.value = article.theme;
+    }
+    if (wordTarget && article.wordTarget) {
+      wordTarget.value = article.wordTarget;
+      try { localStorage.setItem(STORAGE_TARGET_KEY, wordTarget.value); } catch (e) {}
+    }
+    if (article.customStyle && typeof article.customStyle === 'object') {
+      persistLargeItem(CUSTOM_STYLE_KEY, JSON.stringify(article.customStyle), PERSISTENT_LABELS[CUSTOM_STYLE_KEY]);
+    }
+    saveContent();
+    updatePreview();
+    updateStats();
+    if (activeTab) renderSidePanelContent(activeTab);
+    showToast('文章包已导入为新文章');
+  }
+
+  function importArticlePackageFromFile(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (data && data.type === 'local-content-backup') {
+          if (!confirm('导入备份会覆盖当前草稿、文章库、历史版本和自定义模板，确定继续吗？')) return;
+          applyLocalDataBackup(data);
+          showToast('本地文章数据已恢复');
+          return;
+        }
+        applyArticlePackage(data);
+      } catch (e) {
+        showToast('文章包文件无效，导入失败');
+      }
+    };
+    reader.onerror = () => showToast('文章包读取失败');
+    reader.readAsText(file);
+  }
+
+  function importArticlePackage() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json,.json,.zgedit';
+    input.addEventListener('change', () => {
+      if (input.files && input.files[0]) importArticlePackageFromFile(input.files[0]);
+    }, { once: true });
+    input.click();
+  }
+
+  function exportLocalData() {
+    const backup = createLocalDataBackup();
     const date = new Date().toISOString().slice(0, 10);
     downloadJson(`zgedit-backup-${date}.json`, backup);
     showToast('本地文章数据已导出');
@@ -321,18 +533,8 @@
     reader.onload = () => {
       try {
         const backup = JSON.parse(reader.result);
-        const items = backup && backup.items;
-        if (!items || typeof items !== 'object') throw new Error('invalid backup');
         if (!confirm('导入备份会覆盖当前草稿、文章库、历史版本和自定义模板，确定继续吗？')) return;
-
-        PERSISTENT_KEYS.forEach(key => {
-          if (Object.prototype.hasOwnProperty.call(items, key)) {
-            persistLargeItem(key, String(items[key]), PERSISTENT_LABELS[key]);
-          } else {
-            removePersistentItem(key);
-          }
-        });
-        refreshArticleStateAfterStorageChange();
+        applyLocalDataBackup(backup);
         showToast('本地文章数据已恢复');
       } catch (e) {
         showToast('备份文件无效，导入失败');
@@ -490,13 +692,93 @@
     const versions = getVersions();
     const v = versions.find(x => x.id === id);
     if (!v) return;
-    if (!confirm('恢复此版本将覆盖当前内容，确定吗？')) return;
     editor.setValue(v.content);
     if (v.format) inputFormat.value = v.format;
     updatePreview();
     updateStats();
     saveContent();
     showToast('已恢复版本');
+  }
+
+  function getVersionSummary(content) {
+    const source = String(content || '');
+    const text = stripMarkdownToText(source);
+    const headings = getMarkdownHeadings(source);
+    return {
+      title: getArticleTitleFromContent(source) || '无标题',
+      chars: source.length,
+      cnChars: (text.match(/[\u4e00-\u9fa5]/g) || []).length,
+      paragraphs: getReadableParagraphs(source).length,
+      headings: headings.length,
+      images: parseArticleImages(source).length,
+      preview: text ? (text.length > 180 ? text.slice(0, 178) + '…' : text) : '空内容',
+    };
+  }
+
+  function getVersionDiffSummary(versionContent, currentContent) {
+    const oldSummary = getVersionSummary(versionContent);
+    const currentSummary = getVersionSummary(currentContent);
+    return {
+      oldSummary,
+      currentSummary,
+      charDelta: oldSummary.chars - currentSummary.chars,
+      headingDelta: oldSummary.headings - currentSummary.headings,
+      imageDelta: oldSummary.images - currentSummary.images,
+      sameContent: versionContent === currentContent,
+    };
+  }
+
+  function renderHistoryCompare(version) {
+    if (!historyCompareBody) return;
+    const diff = getVersionDiffSummary(version.content || '', editorGetValue());
+    const deltaText = diff.charDelta === 0 ? '无变化' : `${diff.charDelta > 0 ? '+' : ''}${diff.charDelta} 字符`;
+    historyCompareBody.innerHTML = `
+      <div class="history-compare-summary">
+        <div>
+          <span>历史版本</span>
+          <strong>${escapeHtml(diff.oldSummary.title)}</strong>
+          <small>${formatTime(version.timestamp)} · ${diff.oldSummary.cnChars} 汉字 · ${diff.oldSummary.headings} 标题 · ${diff.oldSummary.images} 图</small>
+        </div>
+        <div>
+          <span>当前编辑器</span>
+          <strong>${escapeHtml(diff.currentSummary.title)}</strong>
+          <small>${diff.currentSummary.cnChars} 汉字 · ${diff.currentSummary.headings} 标题 · ${diff.currentSummary.images} 图</small>
+        </div>
+      </div>
+      <div class="history-delta-strip ${diff.sameContent ? 'same' : ''}">
+        <div><strong>${escapeHtml(deltaText)}</strong><span>字符差异</span></div>
+        <div><strong>${diff.headingDelta > 0 ? '+' : ''}${diff.headingDelta}</strong><span>标题差异</span></div>
+        <div><strong>${diff.imageDelta > 0 ? '+' : ''}${diff.imageDelta}</strong><span>图片差异</span></div>
+      </div>
+      <div class="history-compare-preview">
+        <div>
+          <h5>历史版本摘要</h5>
+          <p>${escapeHtml(diff.oldSummary.preview)}</p>
+        </div>
+        <div>
+          <h5>当前内容摘要</h5>
+          <p>${escapeHtml(diff.currentSummary.preview)}</p>
+        </div>
+      </div>
+      ${diff.sameContent ? '<div class="history-compare-note">这个历史版本与当前内容一致，无需恢复。</div>' : '<div class="history-compare-note warn">恢复后会覆盖当前编辑器内容，建议确认当前内容已保存。</div>'}
+    `;
+    if (btnHistoryCompareRestore) {
+      btnHistoryCompareRestore.disabled = diff.sameContent;
+    }
+  }
+
+  function openHistoryCompare(id) {
+    const versions = getVersions();
+    const version = versions.find(x => x.id === id);
+    if (!version || !historyCompareModal) return;
+    pendingHistoryRestoreId = id;
+    renderHistoryCompare(version);
+    openModal(historyCompareModal);
+  }
+
+  function closeHistoryCompare() {
+    pendingHistoryRestoreId = null;
+    if (historyCompareModal) closeModal(historyCompareModal);
   }
 
   function deleteVersion(id) {
@@ -537,7 +819,7 @@
           <div class="history-item-title">${escapeHtml(v.title)}</div>
         </div>
         <div class="history-item-actions">
-          <button data-restore="${v.id}">恢复</button>
+          <button data-restore="${v.id}">对比</button>
           <button data-delete="${v.id}">删除</button>
         </div>
       </div>
@@ -751,6 +1033,16 @@
       value: {
         getWechatReadyHtml: () => getWechatReadyHtml(),
         getCurrentHtml: () => currentHtml,
+        getWechatCopyDiagnostics: () => getWechatCopyDiagnostics(getWechatReadyHtml()),
+        createArticlePackage: () => createArticlePackage(),
+        importArticlePackageData: data => applyArticlePackage(data),
+        createLocalDataBackup: () => createLocalDataBackup(),
+        parseArticleImages: content => parseArticleImages(content),
+        getPublishMetadata: () => getPublishMetadata(),
+        getPublishQualityReport: () => getPublishQualityReport(),
+        getVersionDiffSummary: (versionContent, currentContent) => getVersionDiffSummary(versionContent, currentContent),
+        createMarkdownExport: () => createMarkdownExport(),
+        getSecretInventory: () => getSecretInventory(),
       },
     });
   }
@@ -788,38 +1080,33 @@
   }
 
   // ===== 微信兼容性检查 =====
-  function checkWechatCompatibility() {
-    if (!compatStatus) return;
-    if (!currentHtml) {
-      compatStatus.textContent = '';
-      compatStatus.className = 'compat-status';
-      return;
-    }
+  function getWechatCompatibilityIssues(html = currentHtml) {
+    if (!html) return [];
     const issues = [];
 
     // 检查 DataURL 图片（微信编辑器不支持 base64 粘贴）
-    if (/src="data:image\/[^;]+;base64,/.test(currentHtml)) {
+    if (/src="data:image\/[^;]+;base64,/.test(html)) {
       issues.push('包含 Base64 图片，粘贴到微信后可能无法显示');
     }
 
     // 检查是否有外部链接的图片（这是正常的，不算问题）
     // 但如果是本地文件路径则有问题
-    if (/src="file:\/\//.test(currentHtml) || /src="[C-Z]:\\/.test(currentHtml)) {
+    if (/src="file:\/\//.test(html) || /src="[C-Z]:\\/.test(html)) {
       issues.push('包含本地图片路径，微信无法访问');
     }
 
     // 检查 backdrop-filter（微信不支持）
-    if (/backdrop-filter/.test(currentHtml)) {
+    if (/backdrop-filter/.test(html)) {
       issues.push('使用了 backdrop-filter，微信可能不支持');
     }
 
     // 检查 position: fixed（微信通常过滤）
-    if (/position:\s*fixed/.test(currentHtml)) {
+    if (/position:\s*fixed/.test(html)) {
       issues.push('使用了 position: fixed，微信编辑器可能过滤');
     }
 
     // 检查动画/过渡（微信不支持）
-    if (/animation\s*:|@keyframes|transition\s*:/.test(currentHtml)) {
+    if (/animation\s*:|@keyframes|transition\s*:/.test(html)) {
       issues.push('包含 CSS 动画/过渡，微信不支持');
     }
     const customStyle = getCustomStyleConfig();
@@ -829,6 +1116,17 @@
         ? '自定义 CSS 会在复制时尽量内联，复杂选择器或伪类可能无法完全保留'
         : '自定义 CSS 会在复制时自动转换为内联样式');
     }
+    return issues;
+  }
+
+  function checkWechatCompatibility() {
+    if (!compatStatus) return;
+    if (!currentHtml) {
+      compatStatus.textContent = '';
+      compatStatus.className = 'compat-status';
+      return;
+    }
+    const issues = getWechatCompatibilityIssues(currentHtml);
 
     if (issues.length === 0) {
       compatStatus.innerHTML = '✅ 微信兼容';
@@ -1008,8 +1306,10 @@
   async function copyRichHtml(html, successMessage, sourceNode) {
     try {
       let copied = false;
+      let method = '';
       try {
         copied = copyHtmlBySelection(html, sourceNode);
+        if (copied) method = sourceNode ? 'visible-selection' : 'selection-buffer';
       } catch (e) {
         copied = false;
       }
@@ -1024,14 +1324,17 @@
           }),
         ]);
         copied = true;
+        method = 'clipboard-item';
       }
 
       if (!copied) {
         throw new Error('Copy command was not accepted by this browser');
       }
+      lastWechatCopyResult = { ok: true, method, time: Date.now(), htmlLength: html.length };
       showToast(successMessage || '已复制，可直接粘贴到微信公众号编辑器');
       return true;
     } catch (e) {
+      lastWechatCopyResult = { ok: false, method: 'failed', time: Date.now(), error: e.message || String(e) };
       showToast('复制失败，请使用导出 HTML 功能');
       return false;
     }
@@ -1120,6 +1423,61 @@
     reader.readAsDataURL(file);
   }
 
+  function canCompressImage(file) {
+    return /^image\/(jpeg|jpg|png|webp)$/i.test(file.type || '');
+  }
+
+  function getImageDimensionsFromFile(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve({ width: img.naturalWidth || img.width, height: img.naturalHeight || img.height });
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('image decode failed'));
+      };
+      img.src = url;
+    });
+  }
+
+  function canvasToBlob(canvas, type, quality) {
+    return new Promise(resolve => canvas.toBlob(resolve, type, quality));
+  }
+
+  async function compressImageFile(file) {
+    if (!canCompressImage(file) || file.size < 850 * 1024) {
+      return { file, compressed: false };
+    }
+
+    const dimensions = await getImageDimensionsFromFile(file);
+    const maxEdge = 1600;
+    const ratio = Math.min(1, maxEdge / Math.max(dimensions.width, dimensions.height));
+    const width = Math.max(1, Math.round(dimensions.width * ratio));
+    const height = Math.max(1, Math.round(dimensions.height * ratio));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return { file, compressed: false };
+    ctx.drawImage(await createImageBitmap(file), 0, 0, width, height);
+
+    const targetType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+    const blob = await canvasToBlob(canvas, targetType, targetType === 'image/png' ? undefined : 0.84);
+    if (!blob || blob.size >= file.size) return { file, compressed: false };
+
+    const ext = targetType === 'image/png' ? 'png' : 'jpg';
+    const name = file.name.replace(/\.[^.]+$/, '') + `-zgedit.${ext}`;
+    return {
+      file: new File([blob], name, { type: targetType, lastModified: Date.now() }),
+      compressed: true,
+      originalSize: file.size,
+      compressedSize: blob.size,
+    };
+  }
+
   // ===== 图床配置 =====
   const IMGBED_KEY = 'wechat-formatter-imgbed';
   function getImgBedConfig() {
@@ -1150,13 +1508,13 @@
     return url || null;
   }
 
-  function handleImageFile(file) {
+  async function handleImageFile(file) {
     if (!file.type.startsWith('image/')) {
       showToast('仅支持图片文件');
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      showToast('图片超过 5MB，建议先压缩');
+    if (file.size > 8 * 1024 * 1024 && !canCompressImage(file)) {
+      showToast('图片超过 8MB，且当前格式无法自动压缩');
       return;
     }
     // 显示上传状态
@@ -1171,10 +1529,27 @@
     if (overlay) overlay.style.display = 'flex';
     const hideLoading = () => { if (overlay) overlay.style.display = 'none'; };
 
+    let imageFile = file;
+    try {
+      const prepared = await compressImageFile(file);
+      imageFile = prepared.file;
+      if (prepared.compressed) {
+        showToast(`图片已压缩：${formatBytes(prepared.originalSize)} → ${formatBytes(prepared.compressedSize)}`, 2800);
+      }
+    } catch (e) {
+      console.warn('Image compression skipped:', e);
+    }
+
+    if (imageFile.size > 5 * 1024 * 1024) {
+      hideLoading();
+      showToast('图片仍超过 5MB，建议先压缩或配置图床');
+      return;
+    }
+
     const cfg = getImgBedConfig();
     if (cfg && cfg.url) {
       showToast('正在上传图片...');
-      uploadImageToBed(file).then(url => {
+      uploadImageToBed(imageFile).then(url => {
         hideLoading();
         if (url) {
           insertImageMarkdown(url);
@@ -1190,12 +1565,16 @@
       });
       return;
     }
-    insertImageAsDataUrl(file, hideLoading);
+    insertImageAsDataUrl(imageFile, hideLoading);
   }
 
   // ===== 文件导入 =====
   function importFile(file) {
     const ext = file.name.split('.').pop().toLowerCase();
+    if (ext === 'json' || ext === 'zgedit') {
+      importArticlePackageFromFile(file);
+      return;
+    }
     const formatMap = {
       'md': 'markdown', 'markdown': 'markdown',
       'txt': 'markdown',
@@ -1634,12 +2013,28 @@
         const restoreBtn = e.target.closest('[data-restore]');
         const deleteBtn = e.target.closest('[data-delete]');
         if (restoreBtn) {
-          restoreVersion(Number(restoreBtn.dataset.restore));
-          closeModal(historyModal);
+          openHistoryCompare(Number(restoreBtn.dataset.restore));
         }
         if (deleteBtn) {
           deleteVersion(Number(deleteBtn.dataset.delete));
         }
+      });
+    }
+  }
+  if (historyCompareModal) {
+    const closeCompare = () => closeHistoryCompare();
+    if (btnCloseHistoryCompare) btnCloseHistoryCompare.addEventListener('click', closeCompare);
+    if (btnHistoryCompareClose) btnHistoryCompareClose.addEventListener('click', closeCompare);
+    historyCompareModal.addEventListener('click', (e) => {
+      if (e.target === historyCompareModal) closeCompare();
+    });
+    if (btnHistoryCompareRestore) {
+      btnHistoryCompareRestore.addEventListener('click', () => {
+        if (pendingHistoryRestoreId == null) return;
+        restoreVersion(pendingHistoryRestoreId);
+        closeCompare();
+        if (historyModal) closeModal(historyModal);
+        if (activeTab === 'history') renderHistoryTab();
       });
     }
   }
@@ -2843,6 +3238,7 @@
     editorOnChange(scheduleArticleSave);
     editorOnChange(() => {
       if (activeTab === 'outline') renderOutlineTab();
+      if (activeTab === 'images') renderImagesTab();
     });
   }
 
@@ -2863,6 +3259,7 @@
   const sidePanelTitle = document.getElementById('sidePanelTitle');
   const sidePanelContent = document.getElementById('sidePanelContent');
   const btnCloseSidePanel = document.getElementById('btnCloseSidePanel');
+  const sidePanelMobileQuery = window.matchMedia('(max-width: 768px)');
   let activeTab = 'articles';
 
   const TAB_TITLES = {
@@ -2877,9 +3274,7 @@
 
   function toggleSidePanel(tabId) {
     if (activeTab === tabId && sidePanel.classList.contains('open')) {
-      sidePanel.classList.remove('open');
-      document.querySelectorAll('.activity-btn').forEach(b => b.classList.remove('active'));
-      activeTab = null;
+      closeSidePanel();
       return;
     }
     activeTab = tabId;
@@ -2889,6 +3284,12 @@
       b.classList.toggle('active', b.dataset.tab === tabId);
     });
     renderSidePanelContent(tabId);
+  }
+
+  function closeSidePanel() {
+    sidePanel.classList.remove('open');
+    document.querySelectorAll('.activity-btn').forEach(b => b.classList.remove('active'));
+    activeTab = null;
   }
 
   function renderSidePanelContent(tabId) {
@@ -2905,11 +3306,7 @@
   }
 
   if (btnCloseSidePanel) {
-    btnCloseSidePanel.addEventListener('click', () => {
-      sidePanel.classList.remove('open');
-      document.querySelectorAll('.activity-btn').forEach(b => b.classList.remove('active'));
-      activeTab = null;
-    });
+    btnCloseSidePanel.addEventListener('click', closeSidePanel);
   }
 
   if (activityBar) {
@@ -2918,6 +3315,17 @@
       if (!btn || !btn.dataset.tab) return;
       toggleSidePanel(btn.dataset.tab);
     });
+  }
+
+  function syncSidePanelForViewport(event) {
+    if (event.matches) closeSidePanel();
+    else if (!sidePanel.classList.contains('open')) toggleSidePanel('articles');
+  }
+
+  if (sidePanelMobileQuery.addEventListener) {
+    sidePanelMobileQuery.addEventListener('change', syncSidePanelForViewport);
+  } else if (sidePanelMobileQuery.addListener) {
+    sidePanelMobileQuery.addListener(syncSidePanelForViewport);
   }
 
   // ===== Article Management =====
@@ -3387,9 +3795,10 @@
       versions.slice().reverse().forEach(v => {
         const time = new Date(v.timestamp);
         const timeStr = `${(time.getMonth()+1).toString().padStart(2,'0')}-${time.getDate().toString().padStart(2,'0')} ${time.getHours().toString().padStart(2,'0')}:${time.getMinutes().toString().padStart(2,'0')}`;
-        html += `<div class="sp-list-item" onclick="window._spRestoreVersion(${v.id})">
+        const summary = getVersionSummary(v.content || '');
+        html += `<div class="sp-history-card" onclick="window._spRestoreVersion(${v.id})">
           <span style="flex:1">${escapeHtml(v.title || '无标题')}</span>
-          <span style="font-size:11px;color:var(--text-tertiary)">${timeStr}</span>
+          <small>${timeStr} · ${summary.cnChars} 汉字 · ${summary.headings} 标题</small>
         </div>`;
       });
       html += `<button class="sp-btn" style="margin-top:12px;border-color:#f87171;color:#f87171" onclick="window._spClearHistory()">清空历史</button>`;
@@ -3398,7 +3807,7 @@
   }
 
   window._spSaveVersion = function() { saveVersion(true); renderHistoryTab(); };
-  window._spRestoreVersion = function(id) { restoreVersion(id); renderHistoryTab(); };
+  window._spRestoreVersion = function(id) { openHistoryCompare(id); };
   window._spClearHistory = function() { clearAllVersions(); renderHistoryTab(); };
 
   function getActivePaletteKey() {
@@ -3570,12 +3979,122 @@
   };
 
   function renderImagesTab() {
+    const images = parseArticleImages(editorGetValue());
+    sidePanelImageRefs = images;
+    const networkCount = images.filter(item => item.kind === 'network').length;
+    const base64Count = images.filter(item => item.kind === 'base64').length;
+    const localCount = images.filter(item => item.kind === 'local').length;
+    const missingCount = images.filter(item => item.kind === 'missing').length;
+    const riskCount = base64Count + localCount + missingCount;
+    const embeddedBytes = images.reduce((total, item) => total + (item.bytes || 0), 0);
+    const cfg = getImgBedConfig();
     let html = `<div class="sp-section-title">图片上传</div>`;
-    html += `<button class="sp-btn" onclick="window._spUploadImage()">选择图片上传</button>`;
-    html += `<input type="file" id="spImageInput" accept="image/*" style="display:none" onchange="window._spHandleImage(this)">`;
-    html += `<div class="sp-section-title" style="margin-top:16px">图片设置</div>`;
-    html += `<div style="font-size:12px;color:var(--text-tertiary);line-height:1.6">粘贴或拖拽图片到编辑器即可上传。<br>需先在"设置"中配置图床接口。</div>`;
+    html += `<div class="sp-image-dropcard">
+      <button class="sp-btn" onclick="window._spUploadImage()">选择图片上传</button>
+      <input type="file" id="spImageInput" accept="image/*" style="display:none" onchange="window._spHandleImage(this)">
+      <p>支持粘贴、拖拽和选择图片。大图会先自动压缩，配置图床后会优先上传为外链。</p>
+      <span>${cfg && cfg.url ? '图床已配置' : '未配置图床，将写入 base64'}</span>
+    </div>`;
+    html += `<div class="sp-section-title" style="margin-top:16px">发布风险</div>`;
+    html += `<div class="sp-image-health">
+      <div><strong>${images.length}</strong><span>图片总数</span></div>
+      <div><strong>${networkCount}</strong><span>外链图片</span></div>
+      <div class="${riskCount ? 'warn' : 'pass'}"><strong>${riskCount}</strong><span>需处理</span></div>
+      <div><strong>${formatBytes(embeddedBytes)}</strong><span>内嵌体积</span></div>
+    </div>`;
+    html += `<div class="sp-image-note ${riskCount ? 'warn' : 'pass'}">${
+      images.length === 0
+        ? '当前文章没有图片，发布时无需额外处理图片资源。'
+        : riskCount
+          ? 'Base64、本地路径或缺失地址的图片，粘贴到公众号后台后可能丢失。建议配置图床并重新上传。'
+          : '当前图片均为网络地址，微信发布兼容性较好。'
+    }</div>`;
+    html += `<div class="sp-section-title" style="margin-top:16px">当前文章图片</div>`;
+    if (images.length === 0) {
+      html += `<div class="sp-empty-state">暂无图片资源</div>`;
+    } else {
+      html += `<div class="sp-image-list">`;
+      images.forEach((item, index) => {
+        const previewable = item.kind === 'network' || item.kind === 'base64';
+        const labelMap = {
+          network: '外链',
+          base64: 'Base64',
+          local: '本地路径',
+          missing: '缺失地址',
+        };
+        html += `<div class="sp-image-card ${item.kind}">
+          <div class="sp-image-thumb">${previewable ? `<img src="${escapeHtml(item.src)}" alt="">` : `<span>${item.kind === 'missing' ? '?' : 'IMG'}</span>`}</div>
+          <div class="sp-image-meta">
+            <div class="sp-image-title">${escapeHtml(item.alt || item.filename || `图片 ${index + 1}`)}</div>
+            <div class="sp-image-source">${escapeHtml(item.displaySrc)}</div>
+            <div class="sp-image-tags">
+              <span>${labelMap[item.kind] || '图片'}</span>
+              <span>第 ${item.line} 行</span>
+              ${item.bytes ? `<span>${formatBytes(item.bytes)}</span>` : ''}
+            </div>
+          </div>
+          <div class="sp-image-actions">
+            <button type="button" onclick="window._spScrollToImage(${index})">定位</button>
+            <button type="button" onclick="window._spCopyImageSrc(${index})">复制地址</button>
+          </div>
+        </div>`;
+      });
+      html += `</div>`;
+    }
     sidePanelContent.innerHTML = html;
+  }
+
+  function estimateDataUrlBytes(src) {
+    const match = String(src || '').match(/^data:[^;]+;base64,(.+)$/i);
+    if (!match) return 0;
+    const base64 = match[1].replace(/\s/g, '');
+    return Math.max(0, Math.floor(base64.length * 0.75) - (base64.endsWith('==') ? 2 : base64.endsWith('=') ? 1 : 0));
+  }
+
+  function classifyImageSource(src) {
+    const value = String(src || '').trim();
+    if (!value) return 'missing';
+    if (/^data:image\//i.test(value)) return 'base64';
+    if (/^https?:\/\//i.test(value) || /^\/\//.test(value)) return 'network';
+    return 'local';
+  }
+
+  function lineNumberAt(content, index) {
+    return content.slice(0, index).split('\n').length;
+  }
+
+  function createImageRef(content, src, alt, format, index) {
+    const cleanSrc = String(src || '').trim();
+    const kind = classifyImageSource(cleanSrc);
+    const filename = cleanSrc.split(/[?#]/)[0].split(/[\\/]/).pop() || '';
+    return {
+      src: cleanSrc,
+      displaySrc: cleanSrc.length > 82 ? cleanSrc.slice(0, 78) + '...' : cleanSrc || '未填写图片地址',
+      alt: String(alt || '').trim(),
+      filename,
+      format,
+      line: lineNumberAt(content, index),
+      kind,
+      bytes: kind === 'base64' ? estimateDataUrlBytes(cleanSrc) : 0,
+    };
+  }
+
+  function parseArticleImages(content) {
+    const source = String(content || '');
+    const refs = [];
+    const markdownRe = /!\[([^\]]*)]\(([^)\s]+)(?:\s+["'][^)]+["'])?\)/g;
+    let match;
+    while ((match = markdownRe.exec(source))) {
+      refs.push(createImageRef(source, match[2], match[1], 'markdown', match.index));
+    }
+    const htmlImgRe = /<img\b[^>]*>/gi;
+    while ((match = htmlImgRe.exec(source))) {
+      const tag = match[0];
+      const srcMatch = tag.match(/\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
+      const altMatch = tag.match(/\balt\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
+      refs.push(createImageRef(source, (srcMatch && (srcMatch[1] || srcMatch[2] || srcMatch[3])) || '', (altMatch && (altMatch[1] || altMatch[2] || altMatch[3])) || '', 'html', match.index));
+    }
+    return refs;
   }
 
   window._spUploadImage = function() {
@@ -3587,12 +4106,136 @@
     if (input.files && input.files[0]) {
       handleImageFile(input.files[0]);
     }
+    input.value = '';
   };
 
+  window._spScrollToImage = function(index) {
+    const item = sidePanelImageRefs[index];
+    if (!item) return;
+    if (editor && editor.revealLineInCenter && editor.setPosition) {
+      editor.revealLineInCenter(item.line);
+      editor.setPosition({ lineNumber: item.line, column: 1 });
+      editor.focus();
+    }
+  };
+
+  window._spCopyImageSrc = async function(index) {
+    const item = sidePanelImageRefs[index];
+    if (!item || !item.src) {
+      showToast('没有可复制的图片地址');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(item.src);
+      showToast('图片地址已复制');
+    } catch (e) {
+      showToast('复制失败，请手动选择图片地址');
+    }
+  };
+
+  function readJsonConfig(key) {
+    try {
+      return JSON.parse(localStorage.getItem(key) || '{}');
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function getSecretInventory() {
+    const aiConfig = readJsonConfig('ai-writer-config');
+    const imgBedConfig = readJsonConfig('wechat-formatter-imgbed');
+    const syncConfig = readJsonConfig('wechat-formatter-sync');
+    return [
+      {
+        id: 'ai',
+        label: 'AI 助手',
+        count: aiConfig.apiKey ? 1 : 0,
+        detail: aiConfig.apiKey ? '已保存 API Key' : '未保存 API Key',
+      },
+      {
+        id: 'image',
+        label: '图床授权',
+        count: imgBedConfig.auth ? 1 : 0,
+        detail: imgBedConfig.auth ? '已保存 Authorization' : '未保存 Authorization',
+      },
+      {
+        id: 'sync',
+        label: '云端同步',
+        count: (syncConfig.gistToken ? 1 : 0) + (syncConfig.webdavPass ? 1 : 0),
+        detail: [
+          syncConfig.gistToken ? 'GitHub Token' : '',
+          syncConfig.webdavPass ? 'WebDAV 密码' : '',
+        ].filter(Boolean).join(' / ') || '未保存同步凭据',
+      },
+    ];
+  }
+
+  function renderSecurityPanelHtml() {
+    const inventory = getSecretInventory();
+    const total = inventory.reduce((sum, item) => sum + item.count, 0);
+    const level = total === 0 ? 'pass' : total <= 2 ? 'warn' : 'block';
+    const summary = total === 0 ? '未检测到本地敏感凭据' : `检测到 ${total} 项本地敏感凭据`;
+    return `<div class="sp-section-title">隐私安全</div>
+      <div class="sp-security-card ${level}">
+        <div class="sp-security-head">
+          <div>
+            <strong>${summary}</strong>
+            <span>这些配置只保存在当前浏览器，建议不要在共享电脑长期保留。</span>
+          </div>
+          <b>${total}</b>
+        </div>
+        <div class="sp-security-list">
+          ${inventory.map(item => `
+            <div class="sp-security-row ${item.count ? 'warn' : 'pass'}">
+              <span>${escapeHtml(item.label)}</span>
+              <small>${escapeHtml(item.detail)}</small>
+            </div>
+          `).join('')}
+        </div>
+        <div class="sp-security-actions">
+          <button class="sp-btn" onclick="window._spClearSecrets('ai')">清除 AI Key</button>
+          <button class="sp-btn" onclick="window._spClearSecrets('image')">清除图床授权</button>
+          <button class="sp-btn" onclick="window._spClearSecrets('sync')">清除同步凭据</button>
+          <button class="sp-btn sp-storage-danger" onclick="window._spClearSecrets('all')">清除全部凭据</button>
+        </div>
+      </div>`;
+  }
+
+  function clearSecretGroup(group) {
+    const aiConfig = readJsonConfig('ai-writer-config');
+    const imgBedConfig = readJsonConfig('wechat-formatter-imgbed');
+    const syncConfig = readJsonConfig('wechat-formatter-sync');
+    if (group === 'ai' || group === 'all') {
+      delete aiConfig.apiKey;
+      localStorage.setItem('ai-writer-config', JSON.stringify(aiConfig));
+      const aiKey = document.getElementById('aiApiKey');
+      const spAiKey = document.getElementById('spAiApiKey');
+      if (aiKey) aiKey.value = '';
+      if (spAiKey) spAiKey.value = '';
+    }
+    if (group === 'image' || group === 'all') {
+      delete imgBedConfig.auth;
+      localStorage.setItem('wechat-formatter-imgbed', JSON.stringify(imgBedConfig));
+      const imgAuth = document.getElementById('imgBedAuth');
+      const spImgAuth = document.getElementById('spImgBedAuth');
+      if (imgAuth) imgAuth.value = '';
+      if (spImgAuth) spImgAuth.value = '';
+    }
+    if (group === 'sync' || group === 'all') {
+      delete syncConfig.gistToken;
+      delete syncConfig.webdavPass;
+      localStorage.setItem('wechat-formatter-sync', JSON.stringify(syncConfig));
+      const gist = document.getElementById('spGistToken');
+      const webdav = document.getElementById('spWebdavPass');
+      if (gist) gist.value = '';
+      if (webdav) webdav.value = '';
+    }
+  }
+
   function renderSettingsTab() {
-    const imgBedConfig = JSON.parse(localStorage.getItem('wechat-formatter-imgbed') || '{}');
-    const aiConfig = JSON.parse(localStorage.getItem('ai-writer-config') || '{}');
-    const syncConfig = JSON.parse(localStorage.getItem('wechat-formatter-sync') || '{}');
+    const imgBedConfig = readJsonConfig('wechat-formatter-imgbed');
+    const aiConfig = readJsonConfig('ai-writer-config');
+    const syncConfig = readJsonConfig('wechat-formatter-sync');
 
     let html = `<div class="sp-section-title">图床设置</div>`;
     html += `<div class="sp-setting-row"><label class="sp-setting-label">上传接口 URL</label><input class="sp-setting-input" id="spImgBedUrl" value="${escapeHtml(imgBedConfig.url || '')}" placeholder="https://sm.ms/api/v2/upload"></div>`;
@@ -3623,12 +4266,16 @@
     html += `</div>`;
     html += `<div id="spSyncStatus" style="font-size:11px;color:var(--text-tertiary);margin-top:6px;min-height:16px"></div>`;
 
+    html += renderSecurityPanelHtml();
+
     html += `<div class="sp-section-title">本地存储</div>`;
     html += `<div class="sp-storage-card">
       <div class="sp-storage-line"><span>存储引擎</span><strong>${persistentDb ? 'IndexedDB' : 'localStorage 兜底'}</strong></div>
       <div class="sp-storage-line"><span>内容数据</span><strong id="spStorageUsage">计算中...</strong></div>
       <div style="font-size:12px;color:var(--text-secondary);line-height:1.7;">文章库、草稿、历史版本和自定义模板保存在本机浏览器。图片较大时仍建议配置图床，避免正文过大。</div>
       <div class="sp-storage-actions">
+        <button class="sp-btn" onclick="window._spExportArticlePackage()">导出文章包</button>
+        <button class="sp-btn" onclick="window._spImportArticlePackage()">导入文章包</button>
         <button class="sp-btn" onclick="window._spExportLocalData()">导出备份</button>
         <button class="sp-btn" onclick="window._spImportLocalData()">导入备份</button>
       </div>
@@ -3669,6 +4316,14 @@
   window._spExportLocalData = exportLocalData;
   window._spImportLocalData = importLocalData;
   window._spClearLocalData = clearLocalData;
+  window._spExportArticlePackage = exportArticlePackage;
+  window._spImportArticlePackage = importArticlePackage;
+  window._spClearSecrets = function(group) {
+    if (group === 'all' && !confirm('确定清除所有本地敏感凭据吗？文章内容不会被删除。')) return;
+    clearSecretGroup(group);
+    renderSettingsTab();
+    showToast(group === 'all' ? '本地敏感凭据已清除' : '已清除对应凭据');
+  };
 
   window._spSaveSettings = function() {
     const imgBed = {
@@ -3861,7 +4516,7 @@
     }, 2000);
   }
   // Open default tab on wider screens; keep mobile focused on the editor first.
-  if (!window.matchMedia('(max-width: 768px)').matches) {
+  if (!sidePanelMobileQuery.matches) {
     toggleSidePanel('articles');
   } else {
     activeTab = null;
@@ -3879,7 +4534,10 @@
     return [
       { id: 'copy-wechat', label: '复制到微信', icon: '📋', action: copyForWechat },
       { id: 'export-html', label: '导出 HTML', icon: '💾', action: exportHtml },
+      { id: 'export-markdown', label: '导出 Markdown', icon: 'Ⓜ️', action: exportMarkdownFile },
       { id: 'export-pdf', label: '导出 PDF', icon: '📄', action: () => window.print() },
+      { id: 'export-package', label: '导出文章包', icon: '📦', action: exportArticlePackage },
+      { id: 'import-package', label: '导入文章包', icon: '🧩', action: importArticlePackage },
       { id: 'view-source', label: '查看 HTML 源码', icon: '🔍', action: () => {
         if (htmlOutput) htmlOutput.value = getWechatReadyHtml();
         openModal(htmlModal);
@@ -3994,7 +4652,11 @@
       { label: '导入文件', action: () => fileInput.click() },
       { label: '保存', shortcut: 'Ctrl+S', action: () => { saveContent(); showToast('已保存'); } },
       { type: 'separator' },
+      { label: '导入文章包', action: importArticlePackage },
+      { label: '导出文章包', action: exportArticlePackage },
+      { type: 'separator' },
       { label: '导出 HTML', action: exportHtml },
+      { label: '导出 Markdown', action: exportMarkdownFile },
       { label: '导出 PDF', action: () => window.print() },
       { label: '查看源码', action: () => openModal(htmlModal) },
     ],
@@ -4277,6 +4939,12 @@
         case 'import':
           fileInput.click();
           break;
+        case 'import-package':
+          importArticlePackage();
+          break;
+        case 'export-package':
+          exportArticlePackage();
+          break;
         case 'export-html':
           downloadHtml();
           break;
@@ -4321,12 +4989,606 @@
   });
 
   // ===== Publish Modal =====
+  function getArticleTitleFromContent(content) {
+    const lines = String(content || '').split('\n').map(line => line.trim()).filter(Boolean);
+    const heading = lines.find(line => /^#{1,3}\s+/.test(line));
+    const rawTitle = heading || lines[0] || '';
+    return rawTitle.replace(/^#{1,6}\s*/, '').replace(/^>\s*/, '').trim();
+  }
+
+  function stripMarkdownToText(content) {
+    return String(content || '')
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/!\[[^\]]*]\([^)]+\)/g, ' ')
+      .replace(/\[([^\]]+)]\([^)]+\)/g, '$1')
+      .replace(/^#{1,6}\s+/gm, '')
+      .replace(/^>\s?/gm, '')
+      .replace(/[*_`~>#-]/g, '')
+      .replace(/\|/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function getArticleAuthorFromContent(content) {
+    const lines = String(content || '').split('\n').map(line => line.trim()).filter(Boolean);
+    const authorLine = lines.find(line => /^(作者|author|撰文|文)\s*[:：]/i.test(line));
+    if (!authorLine) return '';
+    return authorLine.replace(/^(作者|author|撰文|文)\s*[:：]\s*/i, '').replace(/^[-*]\s*/, '').trim().slice(0, 32);
+  }
+
+  function getArticlePublishDate(content) {
+    const match = String(content || '').match(/\b(20\d{2}[./-]\d{1,2}[./-]\d{1,2})\b/);
+    return match ? match[1].replace(/[./]/g, '-') : new Date().toISOString().slice(0, 10);
+  }
+
+  function getArticleSummaryFromContent(content, title) {
+    const lines = String(content || '').split('\n');
+    const cleanLines = [];
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      if (/^#{1,6}\s+/.test(trimmed)) return;
+      if (/^(作者|author|撰文|文)\s*[:：]/i.test(trimmed)) return;
+      if (/^!\[/.test(trimmed) || /^<img\b/i.test(trimmed)) return;
+      if (/^\|?\s*:?-{3,}/.test(trimmed)) return;
+      const text = stripMarkdownToText(trimmed);
+      if (!text || text === title) return;
+      cleanLines.push(text);
+    });
+    const summary = cleanLines.join(' ').replace(/\s+/g, ' ').trim();
+    return summary.length > 120 ? summary.slice(0, 118).replace(/[，。；、\s]+$/, '') + '…' : summary;
+  }
+
+  function getPublishMetaStats(content) {
+    const text = stripMarkdownToText(content);
+    const chars = text.length;
+    const cnChars = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
+    const words = text.trim() ? text.trim().split(/\s+/).filter(Boolean).length : 0;
+    const readTime = Math.max(1, Math.ceil(cnChars / 300 + words / 200));
+    const paragraphs = String(content || '').split(/\n{2,}/).filter(part => stripMarkdownToText(part).length > 0).length;
+    return { chars, cnChars, words, readTime, paragraphs };
+  }
+
+  function getPublishMetadata() {
+    const content = editorGetValue();
+    const title = getArticleTitleFromContent(content);
+    const images = parseArticleImages(content);
+    const cover = images.find(item => item.kind === 'network' || item.kind === 'base64') || images[0] || null;
+    const author = getArticleAuthorFromContent(content);
+    const summary = getArticleSummaryFromContent(content, title);
+    return {
+      title,
+      author,
+      date: getArticlePublishDate(content),
+      summary,
+      cover,
+      stats: getPublishMetaStats(content),
+      images,
+    };
+  }
+
+  async function copyPublishMetaValue(value, label) {
+    const text = String(value || '').trim();
+    if (!text) {
+      showToast(`${label}为空，暂无可复制内容`);
+      return;
+    }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+      }
+      showToast(`${label}已复制`);
+    } catch (e) {
+      showToast(`${label}复制失败`);
+    }
+  }
+
+  function renderPublishMeta() {
+    if (!publishMeta) return;
+    const meta = getPublishMetadata();
+    const titleLevel = !meta.title ? 'warn' : meta.title.length > 64 ? 'warn' : 'pass';
+    const summaryLevel = !meta.summary ? 'warn' : meta.summary.length > 120 ? 'warn' : 'pass';
+    const coverLevel = !meta.cover ? 'info' : meta.cover.kind === 'network' ? 'pass' : meta.cover.kind === 'base64' ? 'warn' : 'block';
+    const coverLabel = meta.cover
+      ? meta.cover.kind === 'network' ? '网络首图' : meta.cover.kind === 'base64' ? 'Base64 首图' : '本地/缺失首图'
+      : '未检测到图片';
+    const coverPreview = meta.cover && (meta.cover.kind === 'network' || meta.cover.kind === 'base64')
+      ? `<img src="${escapeHtml(meta.cover.src)}" alt="">`
+      : `<span>${meta.cover ? 'IMG' : '无'}</span>`;
+    publishMeta.innerHTML = `
+      <div class="publish-meta-hero">
+        <div>
+          <span>公众号发布信息</span>
+          <strong>${escapeHtml(meta.title || '未识别到标题')}</strong>
+          <small>${meta.date}${meta.author ? ` · ${escapeHtml(meta.author)}` : ' · 未填写作者'}</small>
+        </div>
+        <div class="publish-meta-cover ${coverLevel}">
+          ${coverPreview}
+        </div>
+      </div>
+      <div class="publish-meta-grid">
+        <div class="publish-meta-card ${titleLevel}">
+          <div><span>标题</span><button type="button" data-publish-copy="title">复制</button></div>
+          <p>${escapeHtml(meta.title || '建议使用一级标题或首行标题')}</p>
+          <small>${meta.title ? `${meta.title.length}/64 字` : '发布后台需要单独填写标题'}</small>
+        </div>
+        <div class="publish-meta-card ${summaryLevel}">
+          <div><span>摘要</span><button type="button" data-publish-copy="summary">复制</button></div>
+          <p>${escapeHtml(meta.summary || '正文太短，暂未生成摘要')}</p>
+          <small>${meta.summary ? `${meta.summary.length}/120 字` : '建议补一段开头导语'}</small>
+        </div>
+        <div class="publish-meta-card ${coverLevel}">
+          <div><span>封面/首图</span><button type="button" data-publish-copy="cover">复制地址</button></div>
+          <p>${escapeHtml(coverLabel)}</p>
+          <small>${meta.cover ? escapeHtml(meta.cover.displaySrc) : '可在图片管理页检查图片资源'}</small>
+        </div>
+        <div class="publish-meta-card pass">
+          <div><span>篇幅</span><button type="button" data-publish-copy="stats">复制</button></div>
+          <p>${meta.stats.cnChars} 汉字 · ${meta.stats.paragraphs} 段</p>
+          <small>约 ${meta.stats.readTime} 分钟阅读 · ${meta.images.length} 张图片</small>
+        </div>
+      </div>
+    `;
+  }
+
+  function getMarkdownHeadings(content) {
+    return String(content || '')
+      .split('\n')
+      .map((line, index) => {
+        const match = line.match(/^(#{1,6})\s+(.+)$/);
+        return match ? { level: match[1].length, text: match[2].trim(), line: index + 1 } : null;
+      })
+      .filter(Boolean);
+  }
+
+  function getReadableParagraphs(content) {
+    return String(content || '')
+      .split(/\n{2,}/)
+      .map(part => stripMarkdownToText(part))
+      .filter(text => text.length > 0);
+  }
+
+  function createQualityItem(level, title, detail, points) {
+    return { level, title, detail, points };
+  }
+
+  function getPublishQualityReport() {
+    const content = editorGetValue();
+    const meta = getPublishMetadata();
+    const headings = getMarkdownHeadings(content);
+    const paragraphs = getReadableParagraphs(content);
+    const longParagraphs = paragraphs.filter(text => text.length > 180);
+    const veryLongParagraphs = paragraphs.filter(text => text.length > 320);
+    const shortParagraphRatio = paragraphs.length ? paragraphs.filter(text => text.length <= 120).length / paragraphs.length : 0;
+    const codeStats = getCodeBlockStats(content);
+    const tableCount = (String(content || '').match(/^\s*\|.+\|\s*$/gm) || []).length;
+    const images = parseArticleImages(content);
+    const riskyImages = images.filter(item => item.kind !== 'network');
+    const lastParagraph = paragraphs[paragraphs.length - 1] || '';
+    const items = [];
+    let score = 100;
+
+    if (!meta.title) {
+      items.push(createQualityItem('warn', '标题缺失', '建议用一级标题或首行标题承接主题。', -12));
+      score -= 12;
+    } else if (meta.title.length > 32 && meta.title.length <= 64) {
+      items.push(createQualityItem('info', '标题略长', `当前 ${meta.title.length} 字，移动端标题可再收紧。`, -4));
+      score -= 4;
+    } else if (meta.title.length > 64) {
+      items.push(createQualityItem('warn', '标题过长', `当前 ${meta.title.length} 字，公众号后台标题上限为 64 字。`, -10));
+      score -= 10;
+    } else {
+      items.push(createQualityItem('pass', '标题长度适合', `当前 ${meta.title.length} 字。`, 0));
+    }
+
+    if (!meta.summary || meta.summary.length < 28) {
+      items.push(createQualityItem('warn', '开头摘要偏弱', '建议开头 1-2 段先交代价值、冲突或结论。', -10));
+      score -= 10;
+    } else {
+      items.push(createQualityItem('pass', '开头可提炼摘要', `${meta.summary.length} 字，可直接作为发布摘要候选。`, 0));
+    }
+
+    if (meta.stats.cnChars > 900 && headings.filter(item => item.level <= 3).length < 2) {
+      items.push(createQualityItem('warn', '小标题偏少', '长文建议用 2 个以上小标题，方便移动端扫读。', -10));
+      score -= 10;
+    } else if (headings.length > 0) {
+      items.push(createQualityItem('pass', '标题层级可扫读', `检测到 ${headings.length} 个标题。`, 0));
+    } else {
+      items.push(createQualityItem('info', '未使用小标题', '短文可接受，教程/长文建议加小标题。', -3));
+      score -= 3;
+    }
+
+    if (veryLongParagraphs.length > 0) {
+      items.push(createQualityItem('warn', '存在超长段落', `${veryLongParagraphs.length} 段超过 320 字，手机端阅读压力较大。`, -12));
+      score -= 12;
+    } else if (longParagraphs.length > 0) {
+      items.push(createQualityItem('info', '部分段落偏长', `${longParagraphs.length} 段超过 180 字，可适当拆行。`, -6));
+      score -= 6;
+    } else if (paragraphs.length > 0) {
+      items.push(createQualityItem('pass', '段落长度友好', `${paragraphs.length} 个正文段落，适合手机阅读。`, 0));
+    }
+
+    if (paragraphs.length >= 4 && shortParagraphRatio < 0.45) {
+      items.push(createQualityItem('info', '节奏可以更轻', '短段落占比偏低，可以穿插短句、列表或引用。', -5));
+      score -= 5;
+    }
+
+    if (codeStats.count > 0 || tableCount > 2) {
+      const detail = [
+        codeStats.count ? `${codeStats.count} 个代码块` : '',
+        tableCount > 2 ? `${tableCount} 行表格` : '',
+      ].filter(Boolean).join('，');
+      items.push(createQualityItem('info', '复杂内容需复查', `${detail}，粘贴后建议在微信后台逐段查看。`, -5));
+      score -= 5;
+    }
+
+    if (riskyImages.length > 0) {
+      items.push(createQualityItem('warn', '图片资源有风险', `${riskyImages.length} 张图片不是稳定网络地址，发布前建议处理。`, -10));
+      score -= 10;
+    } else if (images.length > 0) {
+      items.push(createQualityItem('pass', '图片资源稳定', `${images.length} 张图片均为网络地址。`, 0));
+    }
+
+    if (meta.stats.cnChars > 600 && lastParagraph.length < 24) {
+      items.push(createQualityItem('info', '结尾略轻', '长文末尾建议加一句总结、行动建议或关注引导。', -5));
+      score -= 5;
+    } else if (meta.stats.cnChars > 0) {
+      items.push(createQualityItem('pass', '结尾有收束', '末段长度正常。', 0));
+    }
+
+    score = Math.max(0, Math.min(100, score));
+    const level = score >= 86 ? 'pass' : score >= 72 ? 'info' : 'warn';
+    return {
+      score,
+      level,
+      items,
+      metrics: {
+        headings: headings.length,
+        paragraphs: paragraphs.length,
+        longParagraphs: longParagraphs.length,
+        images: images.length,
+        readTime: meta.stats.readTime,
+      },
+    };
+  }
+
+  function renderPublishQuality() {
+    if (!publishQuality) return;
+    const report = getPublishQualityReport();
+    const topItems = report.items.slice(0, 6);
+    const levelText = report.score >= 86 ? '阅读体验良好' : report.score >= 72 ? '可以发布，建议微调' : '建议先优化';
+    publishQuality.innerHTML = `
+      <div class="publish-quality-board ${report.level}">
+        <div class="publish-quality-score">
+          <strong>${report.score}</strong>
+          <span>${levelText}</span>
+        </div>
+        <div class="publish-quality-metrics">
+          <div><strong>${report.metrics.readTime}</strong><span>分钟</span></div>
+          <div><strong>${report.metrics.headings}</strong><span>标题</span></div>
+          <div><strong>${report.metrics.paragraphs}</strong><span>段落</span></div>
+          <div><strong>${report.metrics.images}</strong><span>图片</span></div>
+        </div>
+      </div>
+      <div class="publish-quality-list">
+        ${topItems.map(item => `
+          <div class="publish-quality-item ${item.level}">
+            <span></span>
+            <div>
+              <strong>${escapeHtml(item.title)}</strong>
+              <small>${escapeHtml(item.detail || '')}</small>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  function getCodeBlockStats(content) {
+    const blocks = String(content || '').match(/```[\s\S]*?```/g) || [];
+    let longestLine = 0;
+    blocks.forEach(block => {
+      block.split('\n').slice(1, -1).forEach(line => {
+        longestLine = Math.max(longestLine, line.length);
+      });
+    });
+    return { count: blocks.length, longestLine };
+  }
+
+  function createPreflightItem(level, title, detail) {
+    return { level, title, detail };
+  }
+
+  function getPublishPreflightItems() {
+    const content = editorGetValue();
+    const html = currentHtml || getWechatReadyHtml();
+    const text = stripHtmlToText(html || '');
+    const chars = content.trim().length;
+    const title = getArticleTitleFromContent(content);
+    const items = [];
+
+    if (!chars) {
+      items.push(createPreflightItem('block', '正文为空', '先写入内容再复制或导出。'));
+    } else {
+      items.push(createPreflightItem('pass', '正文已生成', `约 ${chars} 个字符，可继续发布。`));
+    }
+
+    if (!title) {
+      items.push(createPreflightItem('warn', '未识别到文章标题', '建议用一级标题或首行标题，方便发布时填写公众号标题。'));
+    } else if (title.length > 64) {
+      items.push(createPreflightItem('warn', '标题可能过长', `当前标题 ${title.length} 字，公众号标题建议控制在 64 字内。`));
+    } else {
+      items.push(createPreflightItem('pass', '标题可用', title));
+    }
+
+    const savedContent = getPersistentItem(STORAGE_KEY) || '';
+    if (content !== savedContent) {
+      items.push(createPreflightItem('warn', '内容尚未完成自动保存', '刚修改的内容会继续自动保存，也可以先点顶部“保存”。'));
+    } else {
+      items.push(createPreflightItem('pass', '本地已保存', '当前正文与本地保存内容一致。'));
+    }
+
+    const imageCount = (html.match(/<img\b/gi) || []).length;
+    const base64Count = (html.match(/src=["']data:image\//gi) || []).length;
+    const localImageCount = (html.match(/src=["'](?:file:\/|[A-Z]:\\)/gi) || []).length;
+    if (base64Count > 0) {
+      items.push(createPreflightItem('warn', '存在 Base64 图片', `${base64Count} 张图片可能无法稳定粘贴到微信，建议先上传图床。`));
+    } else if (localImageCount > 0) {
+      items.push(createPreflightItem('block', '存在本地图片路径', '微信后台无法读取本地磁盘图片，请改为网络图片或图床链接。'));
+    } else if (imageCount > 0) {
+      items.push(createPreflightItem('pass', '图片链接可发布', `检测到 ${imageCount} 张图片，未发现本地或 Base64 图片。`));
+    } else {
+      items.push(createPreflightItem('info', '没有图片', '纯文字文章无需图片处理。'));
+    }
+
+    const rawInput = content;
+    const dangerousPatterns = [
+      /<script[\s>]/i,
+      /\son\w+\s*=/i,
+      /javascript\s*:/i,
+      /<iframe[\s>]/i,
+      /srcdoc\s*=/i,
+    ];
+    if (dangerousPatterns.some(pattern => pattern.test(rawInput)) || dangerousPatterns.some(pattern => pattern.test(html))) {
+      items.push(createPreflightItem('block', '发现高风险 HTML 片段', '请移除 script、事件属性、javascript 链接或 iframe 后再发布。'));
+    } else {
+      items.push(createPreflightItem('pass', '未发现高风险脚本', 'HTML 输入已通过基础风险扫描。'));
+    }
+
+    const codeStats = getCodeBlockStats(content);
+    if (codeStats.count > 0 && codeStats.longestLine > 90) {
+      items.push(createPreflightItem('warn', '代码块可能横向溢出', `检测到 ${codeStats.count} 个代码块，最长行 ${codeStats.longestLine} 字符。`));
+    } else if (codeStats.count > 0) {
+      items.push(createPreflightItem('pass', '代码块长度正常', `检测到 ${codeStats.count} 个代码块。`));
+    }
+
+    const target = wordTarget ? parseInt(wordTarget.value, 10) : 0;
+    if (target > 0 && chars < target) {
+      items.push(createPreflightItem('info', '未达到目标字数', `目标 ${target} 字，当前 ${chars} 字。`));
+    } else if (target > 0) {
+      items.push(createPreflightItem('pass', '目标字数已完成', `目标 ${target} 字，当前 ${chars} 字。`));
+    }
+    if (text.length > 20000) {
+      items.push(createPreflightItem('warn', '文章篇幅较长', '超长文章粘贴到公众号后台可能变慢，发布前建议分段检查。'));
+    }
+
+    getWechatCompatibilityIssues(html).forEach(issue => {
+      items.push(createPreflightItem('warn', '微信兼容提醒', issue));
+    });
+
+    return items;
+  }
+
+  function renderPublishPreflight() {
+    if (!publishPreflight) return;
+    const items = getPublishPreflightItems();
+    const blockCount = items.filter(item => item.level === 'block').length;
+    const warnCount = items.filter(item => item.level === 'warn').length;
+    const passCount = items.filter(item => item.level === 'pass').length;
+    const summaryClass = blockCount > 0 ? 'block' : warnCount > 0 ? 'warn' : 'pass';
+    const summaryText = blockCount > 0
+      ? `${blockCount} 项需要处理`
+      : warnCount > 0
+        ? `${warnCount} 项建议检查`
+        : '可以发布';
+    publishPreflight.innerHTML = `
+      <div class="publish-preflight-summary ${summaryClass}">
+        <span>${summaryText}</span>
+        <small>${passCount} 项通过 · ${warnCount} 项提醒 · ${blockCount} 项阻断</small>
+      </div>
+      <div class="publish-preflight-list">
+        ${items.map(item => `
+          <div class="publish-preflight-item ${item.level}">
+            <span class="publish-preflight-dot"></span>
+            <div>
+              <strong>${escapeHtml(item.title)}</strong>
+              <small>${escapeHtml(item.detail || '')}</small>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  function createCopyDiagnostic(level, title, detail, metric) {
+    return { level, title, detail, metric };
+  }
+
+  function getWechatCopyDiagnostics(html = getWechatReadyHtml()) {
+    const diagnostics = [];
+    const safeHtml = html || '';
+    const plainText = stripHtmlToText(safeHtml);
+    const styleCount = (safeHtml.match(/\sstyle=/gi) || []).length;
+    const classIdCount = (safeHtml.match(/\s(?:class|id)=/gi) || []).length;
+    const styleTagCount = (safeHtml.match(/<style[\s>]/gi) || []).length;
+    const divCount = (safeHtml.match(/<div[\s>]/gi) || []).length;
+    const sectionCount = (safeHtml.match(/<section[\s>]/gi) || []).length;
+    const imageCount = (safeHtml.match(/<img\b/gi) || []).length;
+    const base64ImageCount = (safeHtml.match(/src=["']data:image\//gi) || []).length;
+    const localImageCount = (safeHtml.match(/src=["'](?:file:\/|[A-Z]:\\)/gi) || []).length;
+    const unsupportedMatches = safeHtml.match(/linear-gradient|position\s*:\s*(?:fixed|sticky)|display\s*:\s*grid|gap\s*:|filter\s*:|backdrop-filter|animation\s*:|transition\s*:|@media|@keyframes|var\(/gi) || [];
+    const hasClipboardItem = !!(navigator.clipboard && window.ClipboardItem && navigator.clipboard.write);
+    const supportsSelectionCopy = !document.queryCommandSupported || document.queryCommandSupported('copy');
+
+    diagnostics.push(createCopyDiagnostic(
+      hasClipboardItem ? 'pass' : 'info',
+      '富文本剪贴板能力',
+      hasClipboardItem
+        ? '当前浏览器支持 ClipboardItem，可同时写入 text/html 和 text/plain。'
+        : '当前浏览器可能无法直接写入 text/html，将优先使用页面选区复制。',
+      hasClipboardItem ? 'text/html' : '选区复制'
+    ));
+
+    diagnostics.push(createCopyDiagnostic(
+      supportsSelectionCopy ? 'pass' : 'warn',
+      '微信公众号兼容复制路径',
+      supportsSelectionCopy
+        ? '会优先复制发布预览中的可见富文本，微信后台通常更容易保留样式。'
+        : '浏览器可能禁用了 execCommand 复制，必要时请使用导出 HTML。',
+      supportsSelectionCopy ? '可用' : '受限'
+    ));
+
+    diagnostics.push(createCopyDiagnostic(
+      styleCount > 0 ? 'pass' : 'warn',
+      '内联样式',
+      styleCount > 0
+        ? '导出内容包含内联 style，粘贴到微信时更容易保留排版。'
+        : '没有检测到内联样式，粘贴后可能退回纯文本样式。',
+      `${styleCount} 处`
+    ));
+
+    diagnostics.push(createCopyDiagnostic(
+      classIdCount === 0 && styleTagCount === 0 ? 'pass' : 'warn',
+      '无外部样式依赖',
+      classIdCount === 0 && styleTagCount === 0
+        ? '未发现 class、id 或 style 标签，样式不依赖外部 CSS。'
+        : '仍存在 class/id/style 标签，微信可能过滤或忽略这些样式。',
+      `${classIdCount} 属性 / ${styleTagCount} 标签`
+    ));
+
+    diagnostics.push(createCopyDiagnostic(
+      divCount === 0 ? 'pass' : 'warn',
+      '微信块级标签',
+      divCount === 0
+        ? '已将 div 规范化为 section，减少微信后台清洗风险。'
+        : '仍存在 div 标签，微信后台可能重写部分结构。',
+      `${sectionCount} section`
+    ));
+
+    if (unsupportedMatches.length > 0) {
+      diagnostics.push(createCopyDiagnostic(
+        'warn',
+        '微信不稳定 CSS',
+        '检测到渐变、grid、gap、动画或 CSS 变量等微信后台不稳定属性。',
+        `${new Set(unsupportedMatches.map(item => item.toLowerCase())).size} 类`
+      ));
+    } else {
+      diagnostics.push(createCopyDiagnostic('pass', '微信不稳定 CSS', '未发现常见不稳定 CSS 属性。', '干净'));
+    }
+
+    if (base64ImageCount > 0 || localImageCount > 0) {
+      diagnostics.push(createCopyDiagnostic(
+        base64ImageCount > 0 ? 'warn' : 'block',
+        '图片复制风险',
+        base64ImageCount > 0
+          ? 'Base64 图片粘贴到微信后可能无法显示，建议先上传图床。'
+          : '本地图片路径无法被公众号后台读取。',
+        `${imageCount} 张`
+      ));
+    } else {
+      diagnostics.push(createCopyDiagnostic(
+        'pass',
+        '图片复制风险',
+        imageCount > 0 ? '图片均为可复制的网络或已处理来源。' : '当前文章没有图片。',
+        `${imageCount} 张`
+      ));
+    }
+
+    diagnostics.push(createCopyDiagnostic(
+      safeHtml.length < 180000 ? 'pass' : 'warn',
+      'HTML 体积',
+      safeHtml.length < 180000
+        ? 'HTML 体积在安全范围内，微信后台粘贴响应会更稳定。'
+        : 'HTML 体积较大，微信后台粘贴可能变慢。',
+      formatBytes(new Blob([safeHtml]).size)
+    ));
+
+    diagnostics.push(createCopyDiagnostic(
+      plainText.trim() ? 'pass' : 'block',
+      '纯文本兜底',
+      plainText.trim()
+        ? '复制时会同时提供纯文本兜底，极端情况下仍可粘贴正文。'
+        : '没有可用纯文本内容，请检查文章正文。',
+      `${plainText.trim().length} 字`
+    ));
+
+    if (lastWechatCopyResult) {
+      diagnostics.push(createCopyDiagnostic(
+        lastWechatCopyResult.ok ? 'pass' : 'block',
+        '上次复制结果',
+        lastWechatCopyResult.ok
+          ? `上次复制成功，路径：${lastWechatCopyResult.method === 'clipboard-item' ? 'ClipboardItem' : '页面选区复制'}。`
+          : `上次复制失败：${lastWechatCopyResult.error || '未知错误'}`,
+        new Date(lastWechatCopyResult.time).toLocaleTimeString()
+      ));
+    } else {
+      diagnostics.push(createCopyDiagnostic('info', '上次复制结果', '本次打开发布弹窗后尚未执行复制。', '待复制'));
+    }
+
+    return diagnostics;
+  }
+
+  function renderPublishDiagnostics() {
+    if (!publishDiagnostics) return;
+    const html = currentHtml ? getWechatReadyHtml() : '';
+    const diagnostics = getWechatCopyDiagnostics(html);
+    const blockCount = diagnostics.filter(item => item.level === 'block').length;
+    const warnCount = diagnostics.filter(item => item.level === 'warn').length;
+    const passCount = diagnostics.filter(item => item.level === 'pass').length;
+    const summaryClass = blockCount > 0 ? 'block' : warnCount > 0 ? 'warn' : 'pass';
+    const summaryText = blockCount > 0
+      ? '复制存在阻断'
+      : warnCount > 0
+        ? '复制需要留意'
+        : '富文本复制状态良好';
+    publishDiagnostics.innerHTML = `
+      <div class="publish-diagnostics-summary ${summaryClass}">
+        <span>${summaryText}</span>
+        <small>${passCount} 项正常 · ${warnCount} 项提醒 · ${blockCount} 项阻断</small>
+      </div>
+      <div class="publish-diagnostics-grid">
+        ${diagnostics.map(item => `
+          <div class="publish-diagnostic-card ${item.level}">
+            <div class="publish-diagnostic-top">
+              <strong>${escapeHtml(item.title)}</strong>
+              <span>${escapeHtml(item.metric || '')}</span>
+            </div>
+            <small>${escapeHtml(item.detail || '')}</small>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
   function openPublishModal() {
     if (!publishModal) return;
     // Refresh preview
     if (publishPreview) {
       publishPreview.innerHTML = getWechatReadyHtml();
     }
+    renderPublishMeta();
+    renderPublishQuality();
+    renderPublishPreflight();
+    renderPublishDiagnostics();
     publishModal.style.display = 'flex';
     // Reset to first tab
     document.querySelectorAll('.publish-tab').forEach(t => t.classList.remove('active'));
@@ -4348,6 +5610,27 @@
       if (e.target === publishModal) closePublishModal();
     });
   }
+  if (publishMeta) {
+    publishMeta.addEventListener('click', (e) => {
+      const button = e.target.closest('[data-publish-copy]');
+      if (!button) return;
+      const meta = getPublishMetadata();
+      const type = button.dataset.publishCopy;
+      const valueMap = {
+        title: meta.title,
+        summary: meta.summary,
+        cover: meta.cover ? meta.cover.src : '',
+        stats: `${meta.stats.cnChars} 汉字 · ${meta.stats.paragraphs} 段 · 约 ${meta.stats.readTime} 分钟阅读 · ${meta.images.length} 张图片`,
+      };
+      const labelMap = {
+        title: '标题',
+        summary: '摘要',
+        cover: '封面图片地址',
+        stats: '篇幅信息',
+      };
+      copyPublishMetaValue(valueMap[type], labelMap[type] || '发布信息');
+    });
+  }
   // Publish tabs
   document.querySelectorAll('.publish-tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -4364,13 +5647,23 @@
       if (!currentHtml) { showToast('请先输入内容'); return; }
       const html = getWechatReadyHtml();
       await copyRichHtml(html, '已复制富文本，可直接粘贴到微信公众号编辑器', publishPreview);
+      renderPublishDiagnostics();
     });
   }
   if (btnPublishExportHtml) {
-    btnPublishExportHtml.addEventListener('click', exportHtml);
+    btnPublishExportHtml.addEventListener('click', downloadHtml);
   }
   if (btnPublishExportPdf) {
     btnPublishExportPdf.addEventListener('click', () => window.print());
+  }
+  if (btnPublishExportMarkdown) {
+    btnPublishExportMarkdown.addEventListener('click', exportMarkdownFile);
+  }
+  if (btnPublishExportPackage) {
+    btnPublishExportPackage.addEventListener('click', exportArticlePackage);
+  }
+  if (btnPublishExportBackup) {
+    btnPublishExportBackup.addEventListener('click', exportLocalData);
   }
 
   // ===== Save button =====
@@ -4395,5 +5688,18 @@
   if (themeMenuLabel) {
     themeMenuLabel.textContent = getCurrentTheme() === 'dark' ? '切换到浅色模式' : '切换到深色模式';
   }
+
+  function registerServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    const canRegister = location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname);
+    if (!canRegister) return;
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(error => {
+        console.warn('Service worker registration failed:', error);
+      });
+    });
+  }
+
+  registerServiceWorker();
 
 })();
