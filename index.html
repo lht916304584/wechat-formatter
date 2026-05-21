@@ -200,6 +200,13 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="2.5"></circle><path d="M17.5 10.5l2-2a2.83 2.83 0 1 0-4-4l-2 2"></path><path d="M14.5 7.5l-9 9"></path><path d="M3 21l3-3"></path></svg>
         </button>
         <div class="activity-bar-spacer"></div>
+        <button class="activity-btn" id="btnContactService" title="联系客服" aria-label="联系客服">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"></path>
+            <path d="M8 9h8"></path>
+            <path d="M8 13h5"></path>
+          </svg>
+        </button>
         <button class="activity-btn" data-tab="settings" title="设置">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
         </button>
@@ -694,6 +701,30 @@
 
   <!-- Toast 提示 -->
   <div id="toast" class="toast" style="display:none"></div>
+
+  <!-- 联系客服弹窗 -->
+  <div id="contactServiceModal" class="modal" role="dialog" aria-label="联系客服" style="display:none">
+    <div class="modal-content contact-modal-content">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"></path>
+          </svg>
+          联系客服
+        </div>
+        <button class="modal-close" id="btnCloseContactService"></button>
+      </div>
+      <div class="modal-body contact-modal-body">
+        <div class="contact-qr-shell">
+          <img src="assets/wechat-service-qr.png" alt="微信客服二维码">
+        </div>
+        <div class="contact-copy">
+          <strong>微信扫码联系客服</strong>
+          <span>使用过程中遇到复制、样式、图片或部署问题，可以扫码联系。</span>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- 发布弹窗 -->
   <div id="publishModal" class="modal" role="dialog" aria-label="发布文章" style="display:none">

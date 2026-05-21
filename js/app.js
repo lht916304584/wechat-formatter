@@ -11,6 +11,9 @@
   const btnExportHtml = document.getElementById('btnExportHtml');
   const btnImportFile = document.getElementById('btnImportFile');
   const btnClear = document.getElementById('btnClear');
+  const btnContactService = document.getElementById('btnContactService');
+  const contactServiceModal = document.getElementById('contactServiceModal');
+  const btnCloseContactService = document.getElementById('btnCloseContactService');
   const historyCompareModal = document.getElementById('historyCompareModal');
   const historyCompareBody = document.getElementById('historyCompareBody');
   const btnCloseHistoryCompare = document.getElementById('btnCloseHistoryCompare');
@@ -2926,6 +2929,17 @@
   btnCopyHtml.addEventListener('click', copyHtmlCode);
   btnDownloadHtml.addEventListener('click', downloadHtml);
   htmlModal.addEventListener('click', (e) => { if (e.target === htmlModal) closeModal(htmlModal); });
+  if (btnContactService && contactServiceModal) {
+    btnContactService.addEventListener('click', () => openModal(contactServiceModal));
+  }
+  if (btnCloseContactService && contactServiceModal) {
+    btnCloseContactService.addEventListener('click', () => closeModal(contactServiceModal));
+  }
+  if (contactServiceModal) {
+    contactServiceModal.addEventListener('click', (e) => {
+      if (e.target === contactServiceModal) closeModal(contactServiceModal);
+    });
+  }
 
   // 键盘快捷键
   document.addEventListener('keydown', (e) => {

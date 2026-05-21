@@ -47,6 +47,34 @@ function assert(condition, message) {
   assert(pwaState.appleTitle === 'ZgEdit', 'PWA Apple title missing');
   assert(pwaState.fileProtocol, 'smoke test should still run from file protocol');
 
+  const contactButtonState = await page.evaluate(() => {
+    const contact = document.getElementById('btnContactService');
+    const settings = document.querySelector('.activity-btn[data-tab="settings"]');
+    return {
+      hasButton: !!contact,
+      beforeSettings: !!contact && !!settings && contact.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING,
+      title: contact?.getAttribute('title') || '',
+    };
+  });
+  assert(contactButtonState.hasButton, 'contact service button should exist');
+  assert(contactButtonState.beforeSettings, 'contact service button should be before settings button');
+  assert(contactButtonState.title === '联系客服', 'contact service button title mismatch');
+  await page.click('#btnContactService');
+  await page.waitForTimeout(150);
+  const contactModalState = await page.evaluate(() => {
+    const modal = document.getElementById('contactServiceModal');
+    const image = modal.querySelector('img');
+    return {
+      visible: getComputedStyle(modal).display !== 'none',
+      imageSrc: image?.getAttribute('src') || '',
+      text: modal.textContent,
+    };
+  });
+  assert(contactModalState.visible, 'contact service modal should open');
+  assert(contactModalState.imageSrc.includes('wechat-service-qr.png'), 'contact service modal should show QR image');
+  assert(contactModalState.text.includes('微信扫码联系客服'), 'contact service modal copy missing');
+  await page.click('#btnCloseContactService');
+
   await page.evaluate(() => {
     window.editor.setValue('# Smoke Title\n\n正文段落，用于验证样式。');
     document.getElementById('inputFormat').value = 'markdown';
