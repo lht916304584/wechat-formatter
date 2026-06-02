@@ -149,6 +149,48 @@ function assert(condition, message) {
   assert(aiInsertState.editorValue.includes('AI 插入测试'), 'AI insert button should push generated content into editor');
   assert(aiInsertState.modalHidden, 'AI modal should close after inserting generated content');
 
+  await page.route('https://ai-polish.test/chat/completions', route => route.fulfill({
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    },
+    body: JSON.stringify({ choices: [{ message: { content: '## 润色后的标题\n\n这是润色后的正文，表达更自然。' } }] }),
+  }));
+  await page.evaluate(() => {
+    window.editor.setValue('# 粗糙标题\n\n这个句子有点不顺，需要润色。');
+    localStorage.setItem('ai-writer-config', JSON.stringify({
+      enabled: true,
+      apiUrl: 'https://ai-polish.test/chat/completions',
+      apiKey: 'sk-test',
+      model: 'test-model',
+    }));
+  });
+  await page.click('#btnAiWriterToolbar');
+  await page.click('.ai-func-card[data-func="polish"]');
+  await page.evaluate(() => { document.getElementById('aiStreamToggle').checked = false; });
+  const polishReadyState = await page.evaluate(() => ({
+    input: document.getElementById('aiChatInput').value,
+    sendText: document.getElementById('btnAiSend').textContent,
+    insertText: document.getElementById('btnAiInsert').textContent,
+    helper: document.getElementById('aiChatMessages').textContent,
+  }));
+  assert(polishReadyState.input.includes('粗糙标题'), 'polish mode should preload current editor content');
+  assert(polishReadyState.sendText.includes('开始润色'), 'polish mode should rename send button');
+  assert(polishReadyState.insertText.includes('替换为润色稿'), 'polish mode should rename insert button');
+  assert(polishReadyState.helper.includes('已读取当前编辑器内容'), 'polish mode should explain the replacement flow');
+  await page.click('#btnAiSend');
+  await page.waitForFunction(() => !document.getElementById('btnAiInsert').disabled, null, { timeout: 10000 });
+  await page.click('#btnAiInsert');
+  await page.waitForTimeout(250);
+  const polishInsertState = await page.evaluate(() => ({
+    editorValue: window.editor.getValue(),
+    modalHidden: getComputedStyle(document.getElementById('aiWriterModal')).display === 'none',
+  }));
+  assert(polishInsertState.editorValue.includes('润色后的标题'), 'polish mode should replace editor content with polished text');
+  assert(!polishInsertState.editorValue.includes('粗糙标题'), 'polish mode should not keep the old draft after replacement');
+  assert(polishInsertState.modalHidden, 'AI modal should close after applying polished text');
+
   await page.route('https://ai-css.test/chat/completions', route => route.fulfill({
     status: 200,
     headers: {

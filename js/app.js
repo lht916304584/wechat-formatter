@@ -2252,6 +2252,21 @@
     cover: '输出封面设计提示词',
   };
 
+  const AI_SEND_LABELS = {
+    polish: '开始润色',
+    continue: '开始续写',
+    translate: '开始翻译',
+    summary: '生成摘要',
+    explain: '开始解释',
+    cover: '生成提示词',
+    css: '生成 CSS',
+  };
+
+  const AI_INSERT_LABELS = {
+    polish: '替换为润色稿',
+    css: '应用到样式',
+  };
+
   const AI_PROVIDER_HINTS = {
     custom: '自定义服务需要填写兼容 OpenAI Chat Completions 的接口地址。',
     siliconflow: 'SiliconFlow 可领取免费额度，填写 API Key 后即可使用推荐模型。',
@@ -2505,12 +2520,22 @@
       btnAiInsert.disabled = true;
       btnAiInsert.textContent = '插入到编辑器';
     }
+    if (btnAiSend) btnAiSend.textContent = '生成内容';
     aiChatMessages.innerHTML = '';
     if (aiFuncGrid) {
       aiFuncGrid.querySelectorAll('.ai-func-card').forEach(c => c.classList.remove('active'));
     }
     if (aiFuncGrid) aiFuncGrid.style.display = 'grid';
     if (aiChatInput) aiChatInput.placeholder = '描述你想写的文章话题...';
+  }
+
+  function openAiWriterFresh() {
+    if (aiAbortController) aiAbortController.abort();
+    setAiStreaming(false);
+    loadAiConfig();
+    clearAiChat();
+    switchAiTab('assistant');
+    openModal(aiWriterModal);
   }
 
   function setAiStreaming(loading) {
@@ -2765,7 +2790,7 @@
         removeAiTyping();
         if (!aiStreamingBubble) {
           const isArticle = aiCurrentFunc === 'article' || !aiCurrentFunc;
-          const insertLabel = aiCurrentFunc === 'css' ? '应用到样式' : '插入到编辑器';
+          const insertLabel = AI_INSERT_LABELS[aiCurrentFunc] || '插入到编辑器';
           aiStreamingBubble = addAiMessage('ai', '', isArticle ? [
             { label: '按此大纲生成文章', handler: () => handleAiConfirmOutline(aiStreamingBubble._streamedContent) },
             { label: '继续修改', handler: () => { aiChatInput.focus(); } },
@@ -2855,7 +2880,7 @@
     saveContent();
     closeModal(aiWriterModal);
     setTimeout(() => editorFocus(), 0);
-    showToast('AI 内容已插入编辑器');
+    showToast(aiCurrentFunc === 'polish' ? '已替换为润色稿' : 'AI 内容已插入编辑器');
   }
 
   function handleAiFuncCard(funcId) {
@@ -2877,8 +2902,9 @@
     aiGeneratedContent = '';
     if (btnAiInsert) {
       btnAiInsert.disabled = true;
-      btnAiInsert.textContent = funcId === 'css' ? '应用到样式' : '插入到编辑器';
+      btnAiInsert.textContent = AI_INSERT_LABELS[funcId] || '插入到编辑器';
     }
+    if (btnAiSend) btnAiSend.textContent = AI_SEND_LABELS[funcId] || '生成内容';
     if (aiFuncGrid) {
       aiFuncGrid.querySelectorAll('.ai-func-card').forEach(c => {
         c.classList.toggle('active', c.dataset.func === funcId);
@@ -2899,6 +2925,9 @@
     if (aiFuncGrid) aiFuncGrid.style.display = 'none';
 
     addAiMessage('system', `${funcDef.icon} ${funcDef.label}模式 — ${funcDef.placeholder}`);
+    if (funcId === 'polish' && editorContent) {
+      addAiMessage('system', '已读取当前编辑器内容，点击「开始润色」生成润色稿，完成后可用「替换为润色稿」写回编辑器。');
+    }
     setTimeout(() => aiChatInput.focus(), 100);
   }
 
@@ -2920,9 +2949,7 @@
   if (aiWriterModal) {
     enhanceAiModalLayout();
     document.getElementById('btnAiWriter')?.addEventListener('click', () => {
-      loadAiConfig();
-      switchAiTab('assistant');
-      openModal(aiWriterModal);
+      openAiWriterFresh();
     });
     document.getElementById('btnCloseAiWriter')?.addEventListener('click', () => {
       if (aiAbortController) aiAbortController.abort();
@@ -5904,9 +5931,7 @@
   // ===== AI Writer toolbar button =====
   if (btnAiWriterToolbar) {
     btnAiWriterToolbar.addEventListener('click', () => {
-      loadAiConfig();
-      switchAiTab('assistant');
-      openModal(aiWriterModal);
+      openAiWriterFresh();
     });
   }
 
