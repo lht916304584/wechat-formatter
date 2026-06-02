@@ -91,6 +91,36 @@ function assert(condition, message) {
   assert(openRouterState.hint.includes('openrouter/free'), 'OpenRouter provider hint should mention the free router');
   await page.click('#btnCloseAiWriter');
 
+  await page.route('https://ai.test/chat/completions', route => route.fulfill({
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    },
+    body: JSON.stringify({ choices: [{ message: { content: '## AI 插入测试\n\n这段内容应该进入编辑器。' } }] }),
+  }));
+  await page.evaluate(() => {
+    localStorage.setItem('ai-writer-config', JSON.stringify({
+      enabled: true,
+      apiUrl: 'https://ai.test/chat/completions',
+      apiKey: 'sk-test',
+      model: 'test-model',
+    }));
+  });
+  await page.click('#btnAiWriterToolbar');
+  await page.evaluate(() => { document.getElementById('aiStreamToggle').checked = false; });
+  await page.fill('#aiChatInput', '生成一段测试内容');
+  await page.click('#btnAiSend');
+  await page.waitForFunction(() => !document.getElementById('btnAiInsert').disabled, null, { timeout: 10000 });
+  await page.click('#btnAiInsert');
+  await page.waitForTimeout(250);
+  const aiInsertState = await page.evaluate(() => ({
+    editorValue: window.editor.getValue(),
+    modalHidden: getComputedStyle(document.getElementById('aiWriterModal')).display === 'none',
+  }));
+  assert(aiInsertState.editorValue.includes('AI 插入测试'), 'AI insert button should push generated content into editor');
+  assert(aiInsertState.modalHidden, 'AI modal should close after inserting generated content');
+
   await page.evaluate(() => {
     window.editor.setValue('# Smoke Title\n\n正文段落，用于验证样式。');
     document.getElementById('inputFormat').value = 'markdown';

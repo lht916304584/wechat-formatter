@@ -2475,6 +2475,20 @@
     if (aiChatInput) aiChatInput.disabled = loading;
   }
 
+  function setAiGeneratedContent(content, allowPartial = false) {
+    const value = (content || '').trim();
+    if (!value) return;
+    aiGeneratedContent = value;
+    if (btnAiInsert) btnAiInsert.disabled = !allowPartial && !!aiAbortController;
+  }
+
+  function getLastAiGeneratedContent() {
+    if (aiGeneratedContent.trim()) return aiGeneratedContent.trim();
+    const messages = aiChatMessages ? Array.from(aiChatMessages.querySelectorAll('.ai-msg-ai:not(.ai-typing-wrap)')) : [];
+    const last = messages[messages.length - 1];
+    return (last?._streamedContent || last?.childNodes?.[0]?.textContent || last?.textContent || '').trim();
+  }
+
   function isOpenRouterConfig(cfg) {
     return cfg.provider === 'openrouter' || /openrouter\.ai\/api\/v1\/chat\/completions/i.test(cfg.apiUrl || '');
   }
@@ -2608,6 +2622,7 @@
         }
         aiStreamingBubble._streamedContent = partial;
         aiStreamingBubble.childNodes[0].textContent = partial;
+        setAiGeneratedContent(partial, true);
         aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
       },
       (full) => {
@@ -2616,7 +2631,9 @@
         if (full && aiStreamingBubble) {
           aiStreamingBubble._streamedContent = full;
           aiConversation.push({ role: 'assistant', content: full });
+          setAiGeneratedContent(full, true);
         }
+        if (btnAiInsert) btnAiInsert.disabled = !getLastAiGeneratedContent();
         aiStreamingBubble = null;
       },
       (err) => {
@@ -2641,11 +2658,12 @@
         if (!aiStreamingBubble) aiStreamingBubble = addAiMessage('ai', '');
         aiStreamingBubble._streamedContent = partial;
         aiStreamingBubble.childNodes[0].textContent = partial;
+        setAiGeneratedContent(partial, true);
         aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
       },
       (full) => {
         setAiStreaming(false);
-        aiGeneratedContent = full;
+        setAiGeneratedContent(full, true);
         aiStreamingBubble = null;
         if (btnAiInsert) btnAiInsert.disabled = false;
         addAiMessage('system', '文章已生成，点击「插入到编辑器」即可使用。');
@@ -2659,8 +2677,12 @@
   }
 
   function handleAiInsert() {
-    if (!aiGeneratedContent) return;
-    editor.setValue(aiGeneratedContent);
+    const content = getLastAiGeneratedContent();
+    if (!content) {
+      showToast('暂无可插入的 AI 内容');
+      return;
+    }
+    editor.setValue(content);
     inputFormat.value = 'markdown';
     updatePreview();
     updateStats();
