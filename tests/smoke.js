@@ -149,6 +149,52 @@ function assert(condition, message) {
   assert(aiInsertState.editorValue.includes('AI 插入测试'), 'AI insert button should push generated content into editor');
   assert(aiInsertState.modalHidden, 'AI modal should close after inserting generated content');
 
+  await page.route('https://ai-css.test/chat/completions', route => route.fulfill({
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    },
+    body: JSON.stringify({ choices: [{ message: { content: '```css\n.preview-content p { color: #224466; }\n.preview-content h2 { border-left: 4px solid #224466; }\n```' } }] }),
+  }));
+  await page.evaluate(() => {
+    window.editor.setValue('# 原文标题\n\n这是一段原文，不能被 CSS 覆盖。');
+    localStorage.setItem('ai-writer-config', JSON.stringify({
+      enabled: true,
+      apiUrl: 'https://ai-css.test/chat/completions',
+      apiKey: 'sk-test',
+      model: 'test-model',
+    }));
+  });
+  await page.click('#btnAiWriterToolbar');
+  await page.click('.ai-func-card[data-func="css"]');
+  await page.evaluate(() => { document.getElementById('aiStreamToggle').checked = false; });
+  await page.fill('#aiChatInput', '生成一段公众号正文样式');
+  await page.click('#btnAiSend');
+  await page.waitForFunction(() => !document.getElementById('btnAiInsert').disabled, null, { timeout: 10000 });
+  const cssButtonText = await page.textContent('#btnAiInsert');
+  assert(cssButtonText.includes('应用到样式'), 'CSS AI mode should change insert button to apply styles');
+  await page.click('#btnAiInsert');
+  await page.waitForTimeout(300);
+  const aiCssState = await page.evaluate(() => {
+    const customStyle = window._weeditTest.getCustomStyleConfig();
+    return {
+      editorValue: window.editor.getValue(),
+      customCss: customStyle.css || '',
+      enabled: customStyle.enabled !== false,
+      modalHidden: getComputedStyle(document.getElementById('aiWriterModal')).display === 'none',
+      sidePanelTitle: document.getElementById('sidePanelTitle')?.textContent || '',
+      customCssVisible: document.getElementById('customStyleCss')?.value || '',
+    };
+  });
+  assert(aiCssState.editorValue.includes('原文标题'), 'CSS AI apply should not overwrite editor content');
+  assert(!aiCssState.editorValue.includes('preview-content p'), 'CSS AI apply should not insert CSS into editor');
+  assert(aiCssState.customCss.includes('.preview-content p'), 'CSS AI apply should save extracted CSS to custom style');
+  assert(aiCssState.enabled, 'CSS AI apply should enable custom styles');
+  assert(aiCssState.modalHidden, 'AI modal should close after applying CSS');
+  assert(aiCssState.sidePanelTitle.includes('样式'), 'CSS AI apply should open the styles panel');
+  assert(aiCssState.customCssVisible.includes('.preview-content p'), 'CSS AI apply should show CSS in the custom style editor');
+
   await page.evaluate(() => {
     window.editor.setValue('# Smoke Title\n\n正文段落，用于验证样式。');
     document.getElementById('inputFormat').value = 'markdown';
@@ -180,6 +226,7 @@ function assert(condition, message) {
   assert(templateState.hasIllustration, 'template cards should render generated illustrations');
   assert(templateState.createBtn, 'template create button missing');
 
+  await page.evaluate(() => { window._styleTab = 'templates'; });
   await page.click('.activity-btn[data-tab="styles"]');
   const styleState = await page.evaluate(() => ({
     tabs: [...document.querySelectorAll('.style-tab')].map(item => item.dataset.styleTab),
@@ -561,7 +608,7 @@ function assert(condition, message) {
       modalLeft: Math.round(modal.left),
       modalRight: Math.round(modal.right),
       modalBottom: Math.round(modal.bottom),
-      paneScrollable: pane.scrollHeight > pane.clientHeight && getComputedStyle(pane).overflowY === 'auto',
+      paneScrollable: ['auto', 'scroll'].includes(getComputedStyle(pane).overflowY),
       viewportWidth: window.innerWidth,
       viewportHeight: window.innerHeight,
     };

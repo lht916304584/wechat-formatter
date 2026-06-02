@@ -1065,6 +1065,7 @@
         getVersionDiffSummary: (versionContent, currentContent) => getVersionDiffSummary(versionContent, currentContent),
         createMarkdownExport: () => createMarkdownExport(),
         getSecretInventory: () => getSecretInventory(),
+        getCustomStyleConfig: () => getCustomStyleConfig(),
       },
     });
   }
@@ -2173,9 +2174,12 @@
       placeholder: '描述你想要的样式效果...',
       system: `你是一位CSS专家。用户会描述想要实现的视觉效果，请生成对应的CSS代码。
 要求：
-- 生成可在微信公众号中使用的内联CSS样式
-- 考虑微信渲染器的兼容性
-- 输出简洁优雅的CSS代码`,
+- 只输出 CSS 代码，不要解释，不要 Markdown 代码围栏
+- 选择器优先使用 .preview-content 内的 p、h1、h2、h3、blockquote、ul、ol、li、table、code、pre 等元素
+- 生成可被转换为微信公众号内联 style 的样式
+- 不要使用 @keyframes、animation、transition、@media、:hover、::before、::after、display:grid、position:fixed/sticky
+- 不要使用外部图片、外部字体、javascript url
+- 尽量使用 color、background-color、border、padding、margin、border-radius、font-size、line-height 等兼容属性`,
     },
     translate: {
       icon: '🌐', label: '翻译内容',
@@ -2497,7 +2501,10 @@
     aiGeneratedContent = '';
     aiAbortController = null;
     aiStreamingBubble = null;
-    if (btnAiInsert) btnAiInsert.disabled = true;
+    if (btnAiInsert) {
+      btnAiInsert.disabled = true;
+      btnAiInsert.textContent = '插入到编辑器';
+    }
     aiChatMessages.innerHTML = '';
     if (aiFuncGrid) {
       aiFuncGrid.querySelectorAll('.ai-func-card').forEach(c => c.classList.remove('active'));
@@ -2524,6 +2531,50 @@
     const messages = aiChatMessages ? Array.from(aiChatMessages.querySelectorAll('.ai-msg-ai:not(.ai-typing-wrap)')) : [];
     const last = messages[messages.length - 1];
     return (last?._streamedContent || last?.childNodes?.[0]?.textContent || last?.textContent || '').trim();
+  }
+
+  function extractCssFromAiContent(content) {
+    let text = String(content || '').trim();
+    if (!text) return '';
+    const fences = Array.from(text.matchAll(/```([a-zA-Z0-9_-]*)\s*([\s\S]*?)```/g));
+    if (fences.length) {
+      const cssFence = fences.find(match => /css/i.test(match[1] || '')) || fences[0];
+      text = cssFence[2] || '';
+    }
+    text = text
+      .replace(/<\/?style[^>]*>/gi, '')
+      .replace(/^css\s*[:：]?\s*/i, '')
+      .trim();
+    return sanitizeCustomCss(text);
+  }
+
+  function openCustomCssPanel() {
+    window._styleTab = 'css';
+    try {
+      if (typeof toggleSidePanel === 'function') {
+        if (activeTab !== 'styles' || !sidePanel?.classList.contains('open')) {
+          toggleSidePanel('styles');
+        } else if (typeof renderStylesTab === 'function') {
+          renderStylesTab();
+        }
+      }
+    } catch (e) {
+      // Side panel is optional in narrow or early-loading states.
+    }
+  }
+
+  function applyAiCssToCustomStyle(content) {
+    const css = extractCssFromAiContent(content);
+    if (!css || !/[{};]/.test(css)) {
+      showToast('未识别到可应用的 CSS 内容', 3200);
+      return false;
+    }
+    saveCustomStyleConfig({ ...getCustomStyleConfig(), enabled: true, css });
+    updatePreview();
+    closeModal(aiWriterModal);
+    openCustomCssPanel();
+    showToast('AI CSS 已应用到自定义样式');
+    return true;
   }
 
   function isOpenRouterConfig(cfg) {
@@ -2714,11 +2765,12 @@
         removeAiTyping();
         if (!aiStreamingBubble) {
           const isArticle = aiCurrentFunc === 'article' || !aiCurrentFunc;
+          const insertLabel = aiCurrentFunc === 'css' ? '应用到样式' : '插入到编辑器';
           aiStreamingBubble = addAiMessage('ai', '', isArticle ? [
             { label: '按此大纲生成文章', handler: () => handleAiConfirmOutline(aiStreamingBubble._streamedContent) },
             { label: '继续修改', handler: () => { aiChatInput.focus(); } },
           ] : [
-            { label: '插入到编辑器', handler: () => { aiGeneratedContent = aiStreamingBubble._streamedContent; handleAiInsert(); } },
+            { label: insertLabel, handler: () => { aiGeneratedContent = aiStreamingBubble._streamedContent; handleAiInsert(); } },
             { label: '继续对话', handler: () => { aiChatInput.focus(); } },
           ]);
         }
@@ -2784,6 +2836,10 @@
       showToast('暂无可插入的 AI 内容');
       return;
     }
+    if (aiCurrentFunc === 'css') {
+      applyAiCssToCustomStyle(content);
+      return;
+    }
     const inserted = editorSetValue(content);
     if (!inserted || editorGetValue() !== content) {
       const fallbackEditor = document.getElementById('editor-fallback');
@@ -2819,6 +2875,10 @@
     aiConversation = [];
     aiPhase = 'chatting';
     aiGeneratedContent = '';
+    if (btnAiInsert) {
+      btnAiInsert.disabled = true;
+      btnAiInsert.textContent = funcId === 'css' ? '应用到样式' : '插入到编辑器';
+    }
     if (aiFuncGrid) {
       aiFuncGrid.querySelectorAll('.ai-func-card').forEach(c => {
         c.classList.toggle('active', c.dataset.func === funcId);
