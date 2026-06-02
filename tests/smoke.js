@@ -75,6 +75,22 @@ function assert(condition, message) {
   assert(contactModalState.text.includes('微信扫码联系客服'), 'contact service modal copy missing');
   await page.click('#btnCloseContactService');
 
+  await page.click('#btnAiWriterToolbar');
+  await page.click('.ai-tab[data-aitab="settings"]');
+  await page.selectOption('#aiProvider', 'openrouter');
+  const openRouterState = await page.evaluate(() => ({
+    providerText: document.querySelector('#aiProvider option[value="openrouter"]')?.textContent || '',
+    apiUrl: document.getElementById('aiApiUrl')?.value || '',
+    modelValues: [...document.querySelectorAll('#aiModelSelect option')].map(option => option.value),
+    hint: document.getElementById('aiProviderHint')?.textContent || '',
+  }));
+  assert(openRouterState.providerText.includes('OpenRouter'), 'OpenRouter provider option missing');
+  assert(openRouterState.apiUrl === 'https://openrouter.ai/api/v1/chat/completions', 'OpenRouter API URL should auto-fill');
+  assert(openRouterState.modelValues.includes('openrouter/free'), 'OpenRouter free router model missing');
+  assert(openRouterState.modelValues.some(model => model.endsWith(':free')), 'OpenRouter free model options missing');
+  assert(openRouterState.hint.includes('openrouter/free'), 'OpenRouter provider hint should mention the free router');
+  await page.click('#btnCloseAiWriter');
+
   await page.evaluate(() => {
     window.editor.setValue('# Smoke Title\n\n正文段落，用于验证样式。');
     document.getElementById('inputFormat').value = 'markdown';

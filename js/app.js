@@ -2203,6 +2203,16 @@
   const AI_PROVIDER_PRESETS = {
     custom: { url: '', models: [] },
     siliconflow: { url: 'https://api.siliconflow.cn/v1/chat/completions', models: ['Qwen/Qwen2.5-72B-Instruct', 'deepseek-ai/DeepSeek-V3', 'THUDM/glm-4-9b-chat'] },
+    openrouter: {
+      url: 'https://openrouter.ai/api/v1/chat/completions',
+      models: [
+        'openrouter/free',
+        'qwen/qwen3-next-80b-a3b-instruct:free',
+        'openai/gpt-oss-20b:free',
+        'z-ai/glm-4.5-air:free',
+        'google/gemma-4-31b-it:free',
+      ],
+    },
     zhipu: { url: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', models: ['glm-4-flash', 'glm-4-plus', 'glm-4'] },
     openai: { url: 'https://api.openai.com/v1/chat/completions', models: ['gpt-4o-mini', 'gpt-4o'] },
     deepseek: { url: 'https://api.deepseek.com/v1/chat/completions', models: ['deepseek-chat', 'deepseek-reasoner'] },
@@ -2222,6 +2232,7 @@
   const AI_PROVIDER_HINTS = {
     custom: '自定义服务需要填写兼容 OpenAI Chat Completions 的接口地址。',
     siliconflow: 'SiliconFlow 可领取免费额度，填写 API Key 后即可使用推荐模型。',
+    openrouter: 'OpenRouter 使用 sk-or-v1 开头的 Key。免费模型建议优先选择 openrouter/free，额度和可用性以 OpenRouter 当前状态为准。',
     zhipu: '智谱 AI 适合中文写作和长文生成。',
     openai: 'OpenAI 模型质量稳定，请确认账号额度和网络可用。',
     deepseek: 'DeepSeek 适合写作、推理和代码相关任务。',
@@ -2464,6 +2475,32 @@
     if (aiChatInput) aiChatInput.disabled = loading;
   }
 
+  function isOpenRouterConfig(cfg) {
+    return cfg.provider === 'openrouter' || /openrouter\.ai\/api\/v1\/chat\/completions/i.test(cfg.apiUrl || '');
+  }
+
+  function buildAiRequestHeaders(cfg) {
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + cfg.apiKey,
+    };
+    if (isOpenRouterConfig(cfg)) {
+      const origin = location.origin && location.origin !== 'null' ? location.origin : 'https://zgedit.zhigouws.com';
+      headers['HTTP-Referer'] = origin;
+      headers['X-Title'] = 'ZgEdit';
+    }
+    return headers;
+  }
+
+  function formatAiProviderError(status, errData) {
+    const detail = errData?.error?.message || errData?.message || errData?.detail || '';
+    const code = errData?.error?.code || errData?.code || '';
+    if (status === 401 || status === 403) return 'API Key 无效或没有权限，请检查设置';
+    if (status === 429) return '请求过于频繁或免费额度暂不可用，请稍后重试';
+    const suffix = [code, detail].filter(Boolean).join('：');
+    return suffix ? `AI 服务错误（${status}）：${suffix}` : `AI 服务错误（${status}）`;
+  }
+
   async function streamAiResponse(messages, onChunk, onDone, onError) {
     const cfg = getAiConfig();
     if (!cfg.apiKey || !cfg.apiUrl) {
@@ -2483,16 +2520,14 @@
 
       const res = await fetch(cfg.apiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey },
+        headers: buildAiRequestHeaders(cfg),
         body: JSON.stringify(body),
         signal: aiAbortController.signal,
       });
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        if (res.status === 401 || res.status === 403) onError('API Key 无效，请检查设置');
-        else if (res.status === 429) onError('请求过于频繁，请稍后重试');
-        else onError(errData.error?.message || 'AI 服务错误（' + res.status + '）');
+        onError(formatAiProviderError(res.status, errData));
         return;
       }
 
