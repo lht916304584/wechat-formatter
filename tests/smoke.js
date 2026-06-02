@@ -237,6 +237,54 @@ function assert(condition, message) {
   assert(aiCssState.sidePanelTitle.includes('样式'), 'CSS AI apply should open the styles panel');
   assert(aiCssState.customCssVisible.includes('.preview-content p'), 'CSS AI apply should show CSS in the custom style editor');
 
+  await page.route('https://collect.test/article', route => route.fulfill({
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+    },
+    body: `<!doctype html><html><head><title>网页采集测试 - Site</title><meta property="og:title" content="网页采集测试"></head><body>
+      <article>
+        <h1>网页采集测试</h1>
+        <p>这是从网页中采集到的第一段正文。</p>
+        <h2>小标题</h2>
+        <p>这里包含一个 <a href="/detail">链接</a> 和一张图片。</p>
+        <img src="/cover.png" alt="封面图">
+      </article>
+    </body></html>`,
+  }));
+  await page.route('https://collect.test/cover.png', route => route.fulfill({
+    status: 200,
+    headers: {
+      'Content-Type': 'image/png',
+      'Access-Control-Allow-Origin': '*',
+    },
+    body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=', 'base64'),
+  }));
+  await page.evaluate(() => window.editor.setValue(''));
+  await page.click('#btnMore');
+  await page.click('.toolbar-dropdown-item[data-action="collect-article"]');
+  await page.fill('#collectArticleUrl', 'https://collect.test/article');
+  await page.click('#btnFetchArticle');
+  await page.waitForFunction(() => !document.getElementById('btnApplyCollectedArticle').disabled, null, { timeout: 10000 });
+  const collectPreviewState = await page.evaluate(() => ({
+    title: document.getElementById('collectArticleTitle').textContent,
+    status: document.getElementById('collectArticleStatus').textContent,
+    markdown: document.getElementById('collectArticleMarkdown').value,
+  }));
+  assert(collectPreviewState.title.includes('网页采集测试'), 'article collector should extract title');
+  assert(collectPreviewState.status.includes('采集成功'), 'article collector should report success');
+  assert(collectPreviewState.markdown.includes('这是从网页中采集到的第一段正文'), 'article collector should extract body text');
+  assert(collectPreviewState.markdown.includes('![封面图](https://collect.test/cover.png)'), 'article collector should absolutize image URLs');
+  await page.click('#btnApplyCollectedArticle');
+  await page.waitForTimeout(250);
+  const collectedEditorState = await page.evaluate(() => ({
+    editorValue: window.editor.getValue(),
+    modalHidden: getComputedStyle(document.getElementById('collectArticleModal')).display === 'none',
+  }));
+  assert(collectedEditorState.editorValue.includes('# 网页采集测试'), 'collected article should be imported into editor');
+  assert(collectedEditorState.modalHidden, 'collector modal should close after import');
+
   await page.evaluate(() => {
     window.editor.setValue('# Smoke Title\n\n正文段落，用于验证样式。');
     document.getElementById('inputFormat').value = 'markdown';

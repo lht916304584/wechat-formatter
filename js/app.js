@@ -14,6 +14,15 @@
   const btnContactService = document.getElementById('btnContactService');
   const contactServiceModal = document.getElementById('contactServiceModal');
   const btnCloseContactService = document.getElementById('btnCloseContactService');
+  const collectArticleModal = document.getElementById('collectArticleModal');
+  const collectArticleUrl = document.getElementById('collectArticleUrl');
+  const collectArticleStatus = document.getElementById('collectArticleStatus');
+  const collectArticlePreview = document.getElementById('collectArticlePreview');
+  const collectArticleTitle = document.getElementById('collectArticleTitle');
+  const collectArticleMeta = document.getElementById('collectArticleMeta');
+  const collectArticleMarkdown = document.getElementById('collectArticleMarkdown');
+  const btnFetchArticle = document.getElementById('btnFetchArticle');
+  const btnApplyCollectedArticle = document.getElementById('btnApplyCollectedArticle');
   const historyCompareModal = document.getElementById('historyCompareModal');
   const historyCompareBody = document.getElementById('historyCompareBody');
   const btnCloseHistoryCompare = document.getElementById('btnCloseHistoryCompare');
@@ -1620,6 +1629,215 @@
     reader.readAsText(file);
   }
 
+  function setCollectStatus(message, type = '') {
+    if (!collectArticleStatus) return;
+    collectArticleStatus.textContent = message;
+    collectArticleStatus.className = `collect-status ${type}`.trim();
+  }
+
+  function normalizeArticleUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (!/^https?:\/\//i.test(raw)) return '';
+    try {
+      return new URL(raw).href;
+    } catch {
+      return '';
+    }
+  }
+
+  function absolutizeUrl(value, baseUrl) {
+    if (!value) return '';
+    try {
+      return new URL(value, baseUrl).href;
+    } catch {
+      return value;
+    }
+  }
+
+  function cleanCollectedText(value) {
+    return String(value || '')
+      .replace(/\u00a0/g, ' ')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  function escapeMarkdownText(value) {
+    return cleanCollectedText(value)
+      .replace(/\[/g, '\\[')
+      .replace(/\]/g, '\\]');
+  }
+
+  function htmlNodeToMarkdown(node, baseUrl) {
+    if (!node) return '';
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent || '';
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+
+    const tag = node.tagName.toLowerCase();
+    if (['script', 'style', 'noscript', 'iframe', 'svg', 'canvas', 'button', 'form', 'input', 'select', 'textarea'].includes(tag)) return '';
+
+    if (tag === 'br') return '\n';
+    if (tag === 'img') {
+      const src = absolutizeUrl(node.getAttribute('src') || node.getAttribute('data-src') || node.getAttribute('data-original') || '', baseUrl);
+      if (!src) return '';
+      const alt = escapeMarkdownText(node.getAttribute('alt') || '图片');
+      return `\n![${alt}](${src})\n`;
+    }
+
+    const childText = Array.from(node.childNodes).map(child => htmlNodeToMarkdown(child, baseUrl)).join('');
+    const text = cleanCollectedText(childText);
+    if (!text && !['p', 'div', 'section', 'article', 'li', 'blockquote'].includes(tag)) return '';
+
+    if (/^h[1-6]$/.test(tag)) {
+      const level = Math.min(parseInt(tag.slice(1), 10), 3);
+      return `\n${'#'.repeat(level)} ${text}\n`;
+    }
+    if (tag === 'p') return text ? `\n${text}\n` : '';
+    if (tag === 'blockquote') return text ? `\n> ${text.replace(/\n+/g, '\n> ')}\n` : '';
+    if (tag === 'li') return text ? `\n- ${text.replace(/\n+/g, '\n  ')}\n` : '';
+    if (tag === 'a') {
+      const href = absolutizeUrl(node.getAttribute('href') || '', baseUrl);
+      return href && text ? `[${escapeMarkdownText(text)}](${href})` : text;
+    }
+    if (tag === 'strong' || tag === 'b') return text ? `**${text}**` : '';
+    if (tag === 'em' || tag === 'i') return text ? `*${text}*` : '';
+    if (tag === 'code') return text ? `\`${text.replace(/`/g, '')}\`` : '';
+    if (tag === 'pre') return text ? `\n\`\`\`\n${text}\n\`\`\`\n` : '';
+    if (tag === 'tr') {
+      const cells = Array.from(node.children).filter(el => ['td', 'th'].includes(el.tagName.toLowerCase())).map(el => cleanCollectedText(el.textContent));
+      return cells.length ? `| ${cells.join(' | ')} |\n` : '';
+    }
+    if (tag === 'table') {
+      const rows = Array.from(node.querySelectorAll('tr')).map(tr => htmlNodeToMarkdown(tr, baseUrl)).filter(Boolean);
+      if (!rows.length) return '';
+      const firstCells = rows[0].split('|').length - 2;
+      const sep = firstCells > 0 ? `| ${Array(firstCells).fill('---').join(' | ')} |\n` : '';
+      return `\n${rows[0]}${sep}${rows.slice(1).join('')}\n`;
+    }
+    if (['ul', 'ol', 'article', 'main', 'section', 'div'].includes(tag)) return text ? `\n${text}\n` : childText;
+    return childText;
+  }
+
+  function pickArticleRoot(doc) {
+    const selectors = [
+      'article',
+      'main',
+      '.rich_media_content',
+      '#js_content',
+      '.article-content',
+      '.article_content',
+      '.post-content',
+      '.entry-content',
+      '.content',
+    ];
+    for (const selector of selectors) {
+      const el = doc.querySelector(selector);
+      if (el && cleanCollectedText(el.textContent).length > 120) return el;
+    }
+    const candidates = Array.from(doc.body?.querySelectorAll('article,main,section,div') || []);
+    return candidates
+      .map(el => ({ el, score: cleanCollectedText(el.textContent).length + el.querySelectorAll('p,img,h1,h2,h3').length * 80 }))
+      .sort((a, b) => b.score - a.score)[0]?.el || doc.body;
+  }
+
+  function parseCollectedArticle(html, sourceUrl) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('script,style,noscript,iframe,svg,canvas').forEach(el => el.remove());
+    const title = cleanCollectedText(
+      doc.querySelector('meta[property="og:title"]')?.content ||
+      doc.querySelector('h1')?.textContent ||
+      doc.title ||
+      '采集文章'
+    ).replace(/\s+[-_|].*$/, '').slice(0, 80);
+    const root = pickArticleRoot(doc);
+    let body = cleanCollectedText(htmlNodeToMarkdown(root, sourceUrl));
+    body = body
+      .replace(/\n\s*-\s*\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    if (title && !body.startsWith('# ')) body = `# ${title}\n\n${body}`;
+    return {
+      title: title || '采集文章',
+      markdown: body,
+      chars: stripMarkdownToText(body).length,
+    };
+  }
+
+  async function fetchArticleHtml(url) {
+    const direct = fetch(url, { mode: 'cors' }).then(res => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.text();
+    });
+    try {
+      return { html: await direct, via: 'direct' };
+    } catch (directError) {
+      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+      const proxyRes = await fetch(proxyUrl);
+      if (!proxyRes.ok) throw new Error(`直连失败，代理采集也失败（${proxyRes.status}）`);
+      return { html: await proxyRes.text(), via: 'proxy' };
+    }
+  }
+
+  function openCollectArticleModal() {
+    if (!collectArticleModal) return;
+    if (collectArticleUrl) collectArticleUrl.value = '';
+    if (collectArticleMarkdown) collectArticleMarkdown.value = '';
+    if (collectArticlePreview) collectArticlePreview.style.display = 'none';
+    if (btnApplyCollectedArticle) btnApplyCollectedArticle.disabled = true;
+    setCollectStatus('支持公开文章链接。若站点限制跨域，会自动尝试代理采集。');
+    openModal(collectArticleModal);
+    setTimeout(() => collectArticleUrl?.focus(), 60);
+  }
+
+  async function collectArticleFromUrl() {
+    const url = normalizeArticleUrl(collectArticleUrl?.value || '');
+    if (!url) {
+      setCollectStatus('请输入以 http 或 https 开头的文章链接', 'error');
+      return;
+    }
+    if (btnFetchArticle) {
+      btnFetchArticle.disabled = true;
+      btnFetchArticle.textContent = '采集中...';
+    }
+    if (btnApplyCollectedArticle) btnApplyCollectedArticle.disabled = true;
+    setCollectStatus('正在采集文章内容...');
+    try {
+      const result = await fetchArticleHtml(url);
+      const article = parseCollectedArticle(result.html, url);
+      if (!article.markdown || article.chars < 20) throw new Error('未识别到足够的正文内容');
+      if (collectArticleTitle) collectArticleTitle.textContent = article.title;
+      if (collectArticleMeta) collectArticleMeta.textContent = `${article.chars} 字 · ${result.via === 'proxy' ? '代理采集' : '直连采集'}`;
+      if (collectArticleMarkdown) collectArticleMarkdown.value = article.markdown;
+      if (collectArticlePreview) collectArticlePreview.style.display = 'block';
+      if (btnApplyCollectedArticle) btnApplyCollectedArticle.disabled = false;
+      setCollectStatus('采集成功。可在下方微调内容后导入编辑器。', 'ok');
+    } catch (err) {
+      setCollectStatus(`采集失败：${err.message}。可复制网页正文后用「导入文档」或直接粘贴到编辑器。`, 'error');
+    } finally {
+      if (btnFetchArticle) {
+        btnFetchArticle.disabled = false;
+        btnFetchArticle.textContent = '采集';
+      }
+    }
+  }
+
+  function applyCollectedArticle() {
+    const markdown = (collectArticleMarkdown?.value || '').trim();
+    if (!markdown) {
+      setCollectStatus('没有可导入的文章内容', 'error');
+      return;
+    }
+    if (editorGetValue().trim() && !confirm('导入采集文章会覆盖当前编辑器内容，确定继续吗？')) return;
+    editorSetValue(markdown);
+    inputFormat.value = 'markdown';
+    saveContent();
+    updatePreview();
+    updateStats();
+    closeModal(collectArticleModal);
+    showToast('采集文章已导入编辑器');
+  }
+
   // ===== 预览设备切换 =====
   function normalizePreviewDevice(value) {
     if (value === 'desktop') return 'desktop';
@@ -1762,6 +1980,21 @@
     if (e.target.files[0]) importFile(e.target.files[0]);
     fileInput.value = '';
   });
+  if (collectArticleModal) {
+    document.getElementById('btnCloseCollectArticle')?.addEventListener('click', () => closeModal(collectArticleModal));
+    document.getElementById('btnCancelCollectArticle')?.addEventListener('click', () => closeModal(collectArticleModal));
+    collectArticleModal.addEventListener('click', (e) => {
+      if (e.target === collectArticleModal) closeModal(collectArticleModal);
+    });
+    btnFetchArticle?.addEventListener('click', collectArticleFromUrl);
+    btnApplyCollectedArticle?.addEventListener('click', applyCollectedArticle);
+    collectArticleUrl?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        collectArticleFromUrl();
+      }
+    });
+  }
   btnClear.addEventListener('click', () => {
     if (editor.getValue() && !confirm('确定清空所有内容吗？')) return;
     editor.setValue('');
@@ -5191,6 +5424,9 @@
           break;
         case 'import':
           fileInput.click();
+          break;
+        case 'collect-article':
+          openCollectArticleModal();
           break;
         case 'import-package':
           importArticlePackage();

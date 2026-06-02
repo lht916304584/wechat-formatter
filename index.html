@@ -110,6 +110,10 @@
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
               <span>导入文档</span>
             </div>
+            <div class="toolbar-dropdown-item" data-action="collect-article">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><polyline points="7 10 12 15 17 10"></polyline><path d="M4 20h16"></path><path d="M5 7h14"></path></svg>
+              <span>采集文章</span>
+            </div>
             <div class="toolbar-dropdown-item" data-action="import-package">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
               <span>导入文章包</span>
@@ -412,6 +416,42 @@
           </svg>
           下载文件
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 文章采集弹窗 -->
+  <div id="collectArticleModal" class="modal" role="dialog" aria-label="采集文章" style="display:none">
+    <div class="modal-content collect-modal-content">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v12"></path><polyline points="7 10 12 15 17 10"></polyline><path d="M4 20h16"></path>
+          </svg>
+          采集文章
+        </div>
+        <button class="modal-close" id="btnCloseCollectArticle"></button>
+      </div>
+      <div class="modal-body collect-modal-body">
+        <label class="collect-field">
+          <span>文章网址</span>
+          <div class="collect-url-row">
+            <input id="collectArticleUrl" type="url" placeholder="粘贴以 http 或 https 开头的文章链接" autocomplete="off">
+            <button id="btnFetchArticle" class="btn btn-primary btn-small">采集</button>
+          </div>
+        </label>
+        <div id="collectArticleStatus" class="collect-status">支持公开文章链接。若站点限制跨域，会自动尝试代理采集。</div>
+        <div class="collect-preview" id="collectArticlePreview" style="display:none">
+          <div class="collect-preview-head">
+            <strong id="collectArticleTitle">未命名文章</strong>
+            <span id="collectArticleMeta"></span>
+          </div>
+          <textarea id="collectArticleMarkdown" spellcheck="false"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btnCancelCollectArticle" class="btn btn-outline">取消</button>
+        <button id="btnApplyCollectedArticle" class="btn btn-primary" disabled>导入到编辑器</button>
       </div>
     </div>
   </div>
