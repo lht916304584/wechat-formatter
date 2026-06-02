@@ -89,6 +89,34 @@ function assert(condition, message) {
   assert(openRouterState.modelValues.includes('openrouter/free'), 'OpenRouter free router model missing');
   assert(openRouterState.modelValues.some(model => model.endsWith(':free')), 'OpenRouter free model options missing');
   assert(openRouterState.hint.includes('openrouter/free'), 'OpenRouter provider hint should mention the free router');
+  let aiTestRequest = null;
+  await page.route('https://ai-connect.test/chat/completions', async route => {
+    aiTestRequest = {
+      headers: route.request().headers(),
+      body: JSON.parse(route.request().postData() || '{}'),
+    };
+    await route.fulfill({
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
+      body: JSON.stringify({ choices: [{ message: { content: '连接成功' } }] }),
+    });
+  });
+  await page.fill('#aiApiUrl', 'https://ai-connect.test/chat/completions');
+  await page.fill('#aiApiKey', 'sk-or-v1-test');
+  await page.click('#btnTestAiConfig');
+  await page.waitForFunction(() => document.getElementById('aiConfigStatus').textContent.includes('连通成功'), null, { timeout: 10000 });
+  const aiTestState = await page.evaluate(() => ({
+    status: document.getElementById('aiConfigStatus').textContent,
+    className: document.getElementById('aiConfigStatus').className,
+  }));
+  assert(aiTestState.status.includes('openrouter/free'), 'AI connectivity test should report the tested model');
+  assert(aiTestState.className.includes('ok'), 'AI connectivity status should be marked ok after success');
+  assert(aiTestRequest.body.max_tokens === 16, 'AI connectivity test should use a small max token limit');
+  assert(aiTestRequest.body.stream === false, 'AI connectivity test should not use streaming');
+  assert(aiTestRequest.headers.authorization === 'Bearer sk-or-v1-test', 'AI connectivity test should use the form API key');
   await page.click('#btnCloseAiWriter');
 
   await page.route('https://ai.test/chat/completions', route => route.fulfill({

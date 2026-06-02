@@ -71,24 +71,43 @@
   let _monacoDisposable = [];
   const pendingEditorChangeHandlers = [];
 
-  function editorGetValue() { return editor ? editor.getValue() : ''; }
-  function editorSetValue(v) { if (editor) editor.setValue(v); }
-  function editorFocus() { if (editor) editor.focus(); }
+  function getActiveEditor() {
+    if (window.editor && window.editor !== editor) editor = window.editor;
+    return editor || window.editor || null;
+  }
+  function editorGetValue() {
+    const activeEditor = getActiveEditor();
+    return activeEditor ? activeEditor.getValue() : '';
+  }
+  function editorSetValue(v) {
+    const activeEditor = getActiveEditor();
+    if (!activeEditor || typeof activeEditor.setValue !== 'function') return false;
+    activeEditor.setValue(v);
+    return true;
+  }
+  function editorFocus() {
+    const activeEditor = getActiveEditor();
+    if (activeEditor && typeof activeEditor.focus === 'function') activeEditor.focus();
+  }
   function bindEditorChange(handler) {
+    const editor = getActiveEditor();
+    if (!editor || !editor.onDidChangeModelContent) return { dispose: function() {} };
     const d = editor.onDidChangeModelContent(handler);
     _monacoDisposable.push(d);
     return d;
   }
   function editorOnChange(handler) {
-    if (editor && editor.onDidChangeModelContent) {
+    const activeEditor = getActiveEditor();
+    if (activeEditor && activeEditor.onDidChangeModelContent) {
       return bindEditorChange(handler);
     }
     pendingEditorChangeHandlers.push(handler);
     return { dispose: function() {} };
   }
   function editorOnScroll(handler) {
-    if (editor && editor.onDidScrollChange) {
-      const d = editor.onDidScrollChange(handler);
+    const activeEditor = getActiveEditor();
+    if (activeEditor && activeEditor.onDidScrollChange) {
+      const d = activeEditor.onDidScrollChange(handler);
       _monacoDisposable.push(d);
       return d;
     }
@@ -2348,6 +2367,24 @@
     return (modelSelect ? modelSelect.value : null) || cfg.model || 'glm-4-flash';
   }
 
+  function getAiSettingsFormConfig() {
+    const providerSel = document.getElementById('aiProvider');
+    const urlInput = document.getElementById('aiApiUrl');
+    const keyInput = document.getElementById('aiApiKey');
+    const tempSlider = document.getElementById('aiTemperature');
+    const maxTokensSlider = document.getElementById('aiMaxTokens');
+    const enableCb = document.getElementById('aiEnable');
+    return {
+      apiUrl: urlInput ? urlInput.value.trim() : '',
+      apiKey: keyInput ? keyInput.value.trim() : '',
+      model: getResolvedModel(),
+      provider: providerSel ? providerSel.value : 'custom',
+      temperature: tempSlider ? parseFloat(tempSlider.value) : 0.7,
+      maxTokens: maxTokensSlider ? parseInt(maxTokensSlider.value) : 4096,
+      enabled: enableCb ? enableCb.checked : true,
+    };
+  }
+
   function loadAiConfig() {
     const cfg = getAiConfig();
     const urlInput = document.getElementById('aiApiUrl');
@@ -2513,6 +2550,71 @@
     if (status === 429) return '请求过于频繁或免费额度暂不可用，请稍后重试';
     const suffix = [code, detail].filter(Boolean).join('：');
     return suffix ? `AI 服务错误（${status}）：${suffix}` : `AI 服务错误（${status}）`;
+  }
+
+  function updateAiTestStatus(message, ok = false) {
+    if (!aiConfigStatus) return;
+    aiConfigStatus.textContent = message;
+    aiConfigStatus.className = ok ? 'ai-config-status ok' : 'ai-config-status error';
+  }
+
+  async function testAiConnection() {
+    const cfg = getAiSettingsFormConfig();
+    const btn = document.getElementById('btnTestAiConfig');
+    if (!cfg.apiUrl || !cfg.apiKey) {
+      updateAiTestStatus('请先填写 API 地址和 Key');
+      showToast('请先填写 API 地址和 Key');
+      return;
+    }
+    if (!cfg.model) {
+      updateAiTestStatus('请先选择或填写模型');
+      showToast('请先选择或填写模型');
+      return;
+    }
+    const previousText = btn ? btn.textContent : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = '测试中...';
+    }
+    updateAiTestStatus('正在测试 AI 连通性...');
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
+      const res = await fetch(cfg.apiUrl, {
+        method: 'POST',
+        headers: buildAiRequestHeaders(cfg),
+        body: JSON.stringify({
+          model: cfg.model,
+          messages: [
+            { role: 'system', content: '你是连通性测试助手。' },
+            { role: 'user', content: '请只回复：连接成功' },
+          ],
+          temperature: 0,
+          max_tokens: 16,
+          stream: false,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(formatAiProviderError(res.status, errData));
+      }
+      const data = await res.json().catch(() => ({}));
+      const content = data.choices?.[0]?.message?.content || data.choices?.[0]?.text || '';
+      if (!content && !data.choices?.length) throw new Error('接口返回成功，但没有返回可用内容');
+      updateAiTestStatus(`连通成功（模型：${cfg.model}）`, true);
+      showToast('AI 连通测试成功');
+    } catch (err) {
+      const message = err.name === 'AbortError' ? '连通测试超时，请检查网络或接口地址' : err.message;
+      updateAiTestStatus(message);
+      showToast(message, 3600);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = previousText || '测试连通';
+      }
+    }
   }
 
   async function streamAiResponse(messages, onChunk, onDone, onError) {
@@ -2682,12 +2784,21 @@
       showToast('暂无可插入的 AI 内容');
       return;
     }
-    editor.setValue(content);
+    const inserted = editorSetValue(content);
+    if (!inserted || editorGetValue() !== content) {
+      const fallbackEditor = document.getElementById('editor-fallback');
+      if (fallbackEditor) fallbackEditor.value = content;
+    }
+    if (editorGetValue() !== content && document.getElementById('editor-fallback')?.value !== content) {
+      showToast('插入失败：编辑器尚未就绪，请刷新后重试', 3600);
+      return;
+    }
     inputFormat.value = 'markdown';
     updatePreview();
     updateStats();
     saveContent();
     closeModal(aiWriterModal);
+    setTimeout(() => editorFocus(), 0);
     showToast('AI 内容已插入编辑器');
   }
 
@@ -2732,30 +2843,13 @@
   }
 
   function handleSaveAiSettings() {
-    const providerSel = document.getElementById('aiProvider');
-    const urlInput = document.getElementById('aiApiUrl');
-    const keyInput = document.getElementById('aiApiKey');
-    const modelSel = document.getElementById('aiModelSelect');
-    const customModelInput = document.getElementById('aiCustomModel');
-    const tempSlider = document.getElementById('aiTemperature');
-    const maxTokensSlider = document.getElementById('aiMaxTokens');
-    const enableCb = document.getElementById('aiEnable');
-
-    const apiUrl = urlInput ? urlInput.value.trim() : '';
-    const apiKey = keyInput ? keyInput.value.trim() : '';
-    if (!apiUrl || !apiKey) {
+    const cfg = getAiSettingsFormConfig();
+    if (!cfg.apiUrl || !cfg.apiKey) {
       showToast('请填写 API 地址和 Key');
       return;
     }
 
-    const model = getResolvedModel();
-    setAiConfig({
-      apiUrl, apiKey, model,
-      provider: providerSel ? providerSel.value : 'custom',
-      temperature: tempSlider ? parseFloat(tempSlider.value) : 0.7,
-      maxTokens: maxTokensSlider ? parseInt(maxTokensSlider.value) : 4096,
-      enabled: enableCb ? enableCb.checked : true,
-    });
+    setAiConfig(cfg);
     updateAiConfigStatus();
     updateAiErrorBanner();
     updateAiProviderHint();
@@ -2855,6 +2949,7 @@
     });
 
     document.getElementById('btnSaveAiConfig')?.addEventListener('click', handleSaveAiSettings);
+    document.getElementById('btnTestAiConfig')?.addEventListener('click', testAiConnection);
   }
 
   const mdToolbar = document.getElementById('mdToolbar');
@@ -5765,7 +5860,15 @@
     const canRegister = location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname);
     if (!canRegister) return;
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(error => {
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (refreshing) return;
+        refreshing = true;
+        window.location.reload();
+      });
+      navigator.serviceWorker.register('sw.js').then(registration => {
+        registration.update().catch(() => {});
+      }).catch(error => {
         console.warn('Service worker registration failed:', error);
       });
     });

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'zgedit-static-v1';
+const CACHE_NAME = 'zgedit-static-v2';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -11,6 +11,16 @@ const CORE_ASSETS = [
   './assets/zgedit-icon.svg',
   './assets/zgedit-workbench.png'
 ];
+
+const NETWORK_FIRST_ASSETS = new Set([
+  '/index.html',
+  '/landing.html',
+  '/css/main.css',
+  '/js/themes.js',
+  '/js/wechat-renderer.js',
+  '/js/app.js',
+  '/manifest.webmanifest',
+]);
 
 self.addEventListener('install', event => {
   event.waitUntil(
@@ -42,6 +52,21 @@ self.addEventListener('fetch', event => {
           return response;
         })
         .catch(() => caches.match('./index.html'))
+    );
+    return;
+  }
+
+  if (url.origin === location.origin && NETWORK_FIRST_ASSETS.has(url.pathname)) {
+    event.respondWith(
+      fetch(request)
+        .then(response => {
+          if (response && response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put(request, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request))
     );
     return;
   }

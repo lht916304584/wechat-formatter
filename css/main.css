@@ -2154,16 +2154,25 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   margin-top: 4px;
   padding-top: 10px;
   border-top: 1px solid var(--border-light);
 }
 .ai-config-status {
+  flex: 1;
+  min-width: 0;
   font-size: 12px;
   color: var(--text-tertiary);
 }
 .ai-config-status.error { color: #e53e3e; }
 .ai-config-status.ok { color: var(--primary); }
+.ai-settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
 
 /* AI assistant refinement */
 .ai-modal-content {
@@ -2517,6 +2526,16 @@ textarea:focus-visible {
   }
   .ai-tab-pane {
     overflow-y: auto;
+  }
+  .ai-settings-footer {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .ai-settings-actions {
+    width: 100%;
+  }
+  .ai-settings-actions .btn {
+    flex: 1;
   }
   .ai-msg,
   .ai-msg-user,
