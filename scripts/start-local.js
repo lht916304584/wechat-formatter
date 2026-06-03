@@ -32,7 +32,7 @@ function sendJson(res, status, body) {
   send(res, status, JSON.stringify(body), {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-TikHub-Key, X-TikHub-Base',
   });
 }
@@ -53,19 +53,27 @@ function createServer() {
         sendJson(res, 204, {});
         return;
       }
-      if (req.method !== 'GET') {
-        sendJson(res, 405, { ok: false, error: '只支持 GET 请求' });
+      if (req.method !== 'GET' && req.method !== 'POST') {
+        sendJson(res, 405, { ok: false, error: '只支持 GET/POST 请求' });
         return;
       }
       const requestUrl = new URL(req.url, `http://${req.headers.host || `${host}:${preferredPort}`}`);
-      collectArticle({
-        url: requestUrl.searchParams.get('url'),
-        apiKey: req.headers['x-tikhub-key'] || process.env.TIKHUB_API_KEY || process.env.TIKHUB_TOKEN,
-        baseUrl: req.headers['x-tikhub-base'] || process.env.TIKHUB_BASE_URL,
-        fetchImpl: fetch,
-      })
-        .then(result => sendJson(res, 200, result))
-        .catch(err => sendJson(res, 502, { ok: false, error: err.message || '采集失败' }));
+      const chunks = [];
+      req.on('data', chunk => chunks.push(chunk));
+      req.on('end', () => {
+        let body = {};
+        if (chunks.length) {
+          try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch (e) { body = {}; }
+        }
+        collectArticle({
+          url: body.url || requestUrl.searchParams.get('url'),
+          apiKey: body.apiKey || req.headers['x-tikhub-key'] || process.env.TIKHUB_API_KEY || process.env.TIKHUB_TOKEN,
+          baseUrl: body.baseUrl || req.headers['x-tikhub-base'] || process.env.TIKHUB_BASE_URL,
+          fetchImpl: fetch,
+        })
+          .then(result => sendJson(res, 200, result))
+          .catch(err => sendJson(res, 502, { ok: false, error: err.message || '采集失败' }));
+      });
       return;
     }
 

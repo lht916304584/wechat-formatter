@@ -1986,10 +1986,20 @@
   async function fetchArticleViaCollectorApi(url) {
     if (location.protocol === 'file:') throw new Error('本地 file 模式没有服务端采集接口');
     const { key, base } = saveCollectTikhubConfig(false);
-    const headers = {};
-    if (key) headers['X-TikHub-Key'] = key;
-    if (base) headers['X-TikHub-Base'] = base;
-    const res = await fetch(`/api/collect-article?url=${encodeURIComponent(url)}`, { headers });
+    let res;
+    try {
+      res = await fetch('/api/collect-article', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url,
+          apiKey: key || undefined,
+          baseUrl: base || undefined,
+        }),
+      });
+    } catch (err) {
+      throw new Error(`无法连接服务端采集接口，请确认已重新部署并刷新页面（${err.message}）`);
+    }
     const payload = await res.json().catch(() => ({}));
     if (!res.ok || payload.ok === false) throw new Error(payload.error || `服务端采集失败（${res.status}）`);
     const html = payload.html || extractHtmlFromTikHubPayload(payload);

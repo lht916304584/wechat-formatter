@@ -6,7 +6,7 @@ function json(body, status = 200) {
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, X-TikHub-Key, X-TikHub-Base',
     },
   });
@@ -92,15 +92,25 @@ export async function onRequestOptions() {
 }
 
 export async function onRequestGet({ request, env }) {
+  return handleCollectRequest({ request, env, body: {} });
+}
+
+export async function onRequestPost({ request, env }) {
+  let body = {};
+  try { body = await request.json(); } catch { body = {}; }
+  return handleCollectRequest({ request, env, body });
+}
+
+async function handleCollectRequest({ request, env, body }) {
   try {
     const requestUrl = new URL(request.url);
-    const target = new URL(requestUrl.searchParams.get('url') || '');
+    const target = new URL(body.url || requestUrl.searchParams.get('url') || '');
     if (!/^https?:$/.test(target.protocol)) throw new Error('只支持 http/https 文章链接');
 
-    const apiKey = request.headers.get('X-TikHub-Key') || env.TIKHUB_API_KEY || env.TIKHUB_TOKEN;
+    const apiKey = body.apiKey || request.headers.get('X-TikHub-Key') || env.TIKHUB_API_KEY || env.TIKHUB_TOKEN;
     if (!apiKey) throw new Error('服务端未配置 TIKHUB_API_KEY');
 
-    const base = String(request.headers.get('X-TikHub-Base') || env.TIKHUB_BASE_URL || DEFAULT_TIKHUB_BASE).replace(/\/+$/, '');
+    const base = String(body.baseUrl || request.headers.get('X-TikHub-Base') || env.TIKHUB_BASE_URL || DEFAULT_TIKHUB_BASE).replace(/\/+$/, '');
     const encoded = encodeURIComponent(target.href);
     const endpoints = [
       `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encoded}`,
