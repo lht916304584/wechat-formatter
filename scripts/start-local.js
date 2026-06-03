@@ -67,8 +67,8 @@ function createServer() {
         }
         collectArticle({
           url: body.url || requestUrl.searchParams.get('url'),
-          apiKey: body.apiKey || req.headers['x-tikhub-key'] || process.env.TIKHUB_API_KEY || process.env.TIKHUB_TOKEN,
-          baseUrl: body.baseUrl || req.headers['x-tikhub-base'] || process.env.TIKHUB_BASE_URL,
+          apiKey: process.env.TIKHUB_API_KEY || process.env.TIKHUB_TOKEN || body.apiKey || req.headers['x-tikhub-key'],
+          baseUrl: process.env.TIKHUB_BASE_URL || body.baseUrl || req.headers['x-tikhub-base'],
           fetchImpl: fetch,
         })
           .then(result => sendJson(res, 200, result))

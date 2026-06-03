@@ -72,6 +72,11 @@ function looksLikeWrongArticle(html) {
   return /defconvert_bg_div_to_table|wechat-draft-publisher|publisher\.py|fix-wechat-style|match\.group\(|\{content\}/i.test(plain);
 }
 
+function payloadSnippet(payload, rawText) {
+  const source = typeof payload === 'string' ? payload : JSON.stringify(payload || rawText || '');
+  return String(source || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+}
+
 function extractTikHubHtml(payload) {
   if (typeof payload === 'string') return payload.trim();
   if (!payload || typeof payload !== 'object') return '';
@@ -105,9 +110,10 @@ async function requestTikHub(endpoint, apiKey) {
   const message = payload && typeof payload === 'object'
     ? (payload.message_zh || payload.message || payload.error)
     : '';
-  if (!response.ok) throw new Error(message || `TikHub HTTP ${response.status}`);
+  const details = payloadSnippet(payload, text);
+  if (!response.ok) throw new Error(`${message || `TikHub HTTP ${response.status}`}${details ? ` (${details})` : ''}`);
   if (payload && typeof payload === 'object' && payload.code && payload.code !== 200) {
-    throw new Error(message || `TikHub code ${payload.code}`);
+    throw new Error(`${message || `TikHub code ${payload.code}`}${details ? ` (${details})` : ''}`);
   }
 
   const html = extractTikHubHtml(payload);
@@ -132,10 +138,10 @@ async function collect(request, env) {
   const target = new URL(rawUrl);
   if (!/^https?:$/.test(target.protocol)) throw new Error('Only http/https article URLs are supported');
 
-  const apiKey = body.apiKey || request.headers.get('X-TikHub-Key') || env.TIKHUB_API_KEY || env.TIKHUB_TOKEN;
+  const apiKey = env.TIKHUB_API_KEY || env.TIKHUB_TOKEN || body.apiKey || request.headers.get('X-TikHub-Key');
   if (!apiKey) throw new Error('Missing TIKHUB_API_KEY');
 
-  const base = String(body.baseUrl || request.headers.get('X-TikHub-Base') || env.TIKHUB_BASE_URL || DEFAULT_TIKHUB_BASE).replace(/\/+$/, '');
+  const base = String(env.TIKHUB_BASE_URL || body.baseUrl || request.headers.get('X-TikHub-Base') || DEFAULT_TIKHUB_BASE).replace(/\/+$/, '');
   const encoded = encodeURIComponent(target.href);
   const endpoints = [
     `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encoded}`,
