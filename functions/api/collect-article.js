@@ -1,4 +1,4 @@
-const DEFAULT_TIKHUB_BASE = 'https://api.tikhub.dev';
+const DEFAULT_TIKHUB_BASE = 'https://user.tikhub.io';
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {

@@ -137,7 +137,7 @@
   const CUSTOM_STYLE_KEY = 'wechat-custom-style-config';
   const COLLECT_TIKHUB_KEY = 'zgedit-collector-tikhub-key';
   const COLLECT_TIKHUB_BASE_KEY = 'zgedit-collector-tikhub-base';
-  const COLLECT_TIKHUB_DEFAULT_BASE = 'https://api.tikhub.dev';
+  const COLLECT_TIKHUB_DEFAULT_BASE = 'https://user.tikhub.io';
   const IDB_NAME = 'weedit-local-store';
   const IDB_VERSION = 1;
   const IDB_STORE = 'kv';
@@ -1680,6 +1680,7 @@
             <div class="collect-config-row">
               <input id="collectTikhubKey" type="password" placeholder="TikHub API Key，线上建议配置环境变量">
               <select id="collectTikhubBase" aria-label="TikHub 接口域名">
+                <option value="https://user.tikhub.io">用户通道 user.tikhub.io</option>
                 <option value="https://api.tikhub.dev">大陆节点 api.tikhub.dev</option>
                 <option value="https://api.tikhub.io">海外节点 api.tikhub.io</option>
               </select>
@@ -1902,7 +1903,41 @@
     return {
       title: title || '采集文章',
       markdown: body,
+      content: body,
+      format: 'markdown',
       chars: stripMarkdownToText(body).length,
+    };
+  }
+
+  function parseCollectedArticleHtml(html, sourceUrl) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('script,noscript,iframe,svg,canvas,form,input,button,textarea,select,option,meta,link,base').forEach(el => el.remove());
+    doc.querySelectorAll('img').forEach(img => {
+      const src = absolutizeUrl(img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-original') || '', sourceUrl);
+      if (src) img.setAttribute('src', src);
+    });
+    doc.querySelectorAll('a').forEach(link => {
+      const href = absolutizeUrl(link.getAttribute('href') || '', sourceUrl);
+      if (href) link.setAttribute('href', href);
+    });
+    const title = cleanCollectedText(
+      doc.querySelector('meta[property="og:title"]')?.content ||
+      doc.querySelector('h1')?.textContent ||
+      doc.title ||
+      '采集文章'
+    ).replace(/\s+[-_|].*$/, '').slice(0, 80);
+    const root = pickArticleRoot(doc);
+    const rootHtml = cleanCollectedText(root?.innerHTML || root?.outerHTML || '');
+    const titleHtml = title && !/<h1[\s>]/i.test(rootHtml)
+      ? `<h1 style="font-size:24px;line-height:1.4;margin:0 0 18px;font-weight:700;">${escapeHtml(title)}</h1>`
+      : '';
+    const content = `${titleHtml}${rootHtml}`.trim();
+    return {
+      title: title || '采集文章',
+      content,
+      markdown: content,
+      format: 'html',
+      chars: stripHtmlToText(content).length,
     };
   }
 
@@ -2006,7 +2041,10 @@
       return;
     }
     if (collectArticleUrl) collectArticleUrl.value = '';
-    if (collectArticleMarkdown) collectArticleMarkdown.value = '';
+    if (collectArticleMarkdown) {
+      collectArticleMarkdown.value = '';
+      collectArticleMarkdown.dataset.format = 'markdown';
+    }
     if (collectArticlePreview) collectArticlePreview.style.display = 'none';
     if (btnApplyCollectedArticle) btnApplyCollectedArticle.disabled = true;
     loadCollectTikhubConfig();
@@ -2027,15 +2065,25 @@
       btnFetchArticle.textContent = '采集中...';
     }
     if (btnApplyCollectedArticle) btnApplyCollectedArticle.disabled = true;
+    if (collectArticleMarkdown) {
+      collectArticleMarkdown.value = '';
+      collectArticleMarkdown.dataset.format = 'markdown';
+    }
+    if (collectArticlePreview) collectArticlePreview.style.display = 'none';
     setCollectStatus('正在采集文章内容...');
     try {
       const result = await fetchArticleHtml(url);
-      const article = parseCollectedArticle(result.html, url);
-      if (!article.markdown || article.chars < 20) throw new Error('未识别到足够的正文内容');
+      const article = result.via === 'tikhub'
+        ? parseCollectedArticleHtml(result.html, url)
+        : parseCollectedArticle(result.html, url);
+      if (!article.content || article.chars < 20) throw new Error('未识别到足够的正文内容');
       if (collectArticleTitle) collectArticleTitle.textContent = article.title;
       const viaLabel = result.via === 'tikhub' ? 'TikHub 采集' : (result.via === 'proxy' ? '代理采集' : '直连采集');
-      if (collectArticleMeta) collectArticleMeta.textContent = `${article.chars} 字 · ${viaLabel}`;
-      if (collectArticleMarkdown) collectArticleMarkdown.value = article.markdown;
+      if (collectArticleMeta) collectArticleMeta.textContent = `${article.chars} 字 · ${viaLabel} · ${article.format === 'html' ? 'HTML 导入' : 'Markdown 导入'}`;
+      if (collectArticleMarkdown) {
+        collectArticleMarkdown.value = article.content;
+        collectArticleMarkdown.dataset.format = article.format;
+      }
       if (collectArticlePreview) collectArticlePreview.style.display = 'block';
       if (btnApplyCollectedArticle) btnApplyCollectedArticle.disabled = false;
       setCollectStatus('采集成功。可在下方微调内容后导入编辑器。', 'ok');
@@ -2051,14 +2099,15 @@
 
   function applyCollectedArticle() {
     if (!ensureCollectArticleModal()) return;
-    const markdown = (collectArticleMarkdown?.value || '').trim();
-    if (!markdown) {
+    const content = (collectArticleMarkdown?.value || '').trim();
+    const format = collectArticleMarkdown?.dataset.format || 'markdown';
+    if (!content) {
       setCollectStatus('没有可导入的文章内容', 'error');
       return;
     }
     if (editorGetValue().trim() && !confirm('导入采集文章会覆盖当前编辑器内容，确定继续吗？')) return;
-    editorSetValue(markdown);
-    inputFormat.value = 'markdown';
+    editorSetValue(content);
+    inputFormat.value = format;
     saveContent();
     updatePreview();
     updateStats();
