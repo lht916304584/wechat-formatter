@@ -2000,8 +2000,13 @@
     } catch (err) {
       throw new Error(`无法连接服务端采集接口，请确认已重新部署并刷新页面（${err.message}）`);
     }
-    const payload = await res.json().catch(() => ({}));
-    if (!res.ok || payload.ok === false) throw new Error(payload.error || `服务端采集失败（${res.status}）`);
+    const responseText = await res.text();
+    let payload = {};
+    try { payload = responseText ? JSON.parse(responseText) : {}; } catch { payload = {}; }
+    if (!res.ok || payload.ok === false) {
+      const fallback = responseText && !responseText.trim().startsWith('<') ? responseText.slice(0, 180) : '';
+      throw new Error(payload.error || fallback || `Cloudflare/Vercel 采集函数未正常返回（HTTP ${res.status}）`);
+    }
     const html = payload.html || extractHtmlFromTikHubPayload(payload);
     if (!html) throw new Error('服务端未返回可解析的文章 HTML');
     return { html, via: payload.via || 'tikhub' };

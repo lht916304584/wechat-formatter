@@ -8,6 +8,7 @@ function json(body, status = 200) {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, X-TikHub-Key, X-TikHub-Base',
+      'Cache-Control': 'no-store',
     },
   });
 }
@@ -16,119 +17,136 @@ function extractHtmlFromPayload(payload) {
   const root = payload && typeof payload === 'object' && 'data' in payload ? payload.data : payload;
   const queue = [{ item: root, path: '' }];
   const seen = new Set();
-  const htmlKeys = ['html', 'content', 'content_html', 'article_html', 'article_content', 'rich_media_content', 'body'];
+  const keys = ['html', 'content', 'content_html', 'article_html', 'article_content', 'rich_media_content', 'body'];
   const candidates = [];
 
-  function scoreCandidate(text, keyPath) {
-    const withoutCode = text
+  function score(text, keyPath) {
+    const clean = text
       .replace(/<script[\s\S]*?<\/script>/gi, '')
       .replace(/<style[\s\S]*?<\/style>/gi, '');
-    const plain = withoutCode.replace(/<[^>]+>/g, '').replace(/\s+/g, '');
-    let score = 0;
-    if (/id=["']js_content["']/i.test(text)) score += 1200;
-    if (/class=["'][^"']*rich_media_content/i.test(text)) score += 1000;
-    if (/rich_media_content|js_content|article_content|content_html/i.test(keyPath)) score += 700;
-    if (/<article[\s>]/i.test(text)) score += 500;
-    score += Math.min(plain.length, 5000) / 10;
-    score += (text.match(/<(p|section|h1|h2|img|blockquote)\b/gi) || []).length * 12;
-    if (/function\s*\(|def\s+\w+\(|match\.group|Traceback|import\s+\w+/i.test(plain)) score -= 350;
-    return score;
+    const plain = clean.replace(/<[^>]+>/g, '').replace(/\s+/g, '');
+    let value = 0;
+    if (/id=["']js_content["']/i.test(text)) value += 1200;
+    if (/class=["'][^"']*rich_media_content/i.test(text)) value += 1000;
+    if (/rich_media_content|js_content|article_content|content_html/i.test(keyPath)) value += 700;
+    if (/<article[\s>]/i.test(text)) value += 500;
+    value += Math.min(plain.length, 5000) / 10;
+    value += (text.match(/<(p|section|h1|h2|img|blockquote)\b/gi) || []).length * 12;
+    if (/function\s*\(|def\s+\w+\(|match\.group|Traceback|import\s+\w+/i.test(plain)) value -= 350;
+    return value;
   }
 
-  function addCandidate(value, keyPath) {
+  function add(value, keyPath) {
     if (typeof value !== 'string') return;
-    const text = value.trim();
-    if (text.length <= 80 || !/<\/?[a-z][\s\S]*>/i.test(text)) return;
-    candidates.push({ html: text, score: scoreCandidate(text, keyPath) });
+    const html = value.trim();
+    if (html.length <= 80 || !/<\/?[a-z][\s\S]*>/i.test(html)) return;
+    candidates.push({ html, score: score(html, keyPath) });
   }
 
   while (queue.length) {
-    const { item, path } = queue.shift();
+    const current = queue.shift();
+    const item = current.item;
+    const path = current.path;
     if (!item) continue;
     if (typeof item === 'string') {
-      addCandidate(item, path);
+      add(item, path);
       continue;
     }
     if (typeof item !== 'object' || seen.has(item)) continue;
     seen.add(item);
-    for (const key of htmlKeys) {
-      addCandidate(item[key], path ? `${path}.${key}` : key);
-    }
-    Object.entries(item).forEach(([key, value]) => {
+
+    for (const key of keys) add(item[key], path ? `${path}.${key}` : key);
+    for (const [key, value] of Object.entries(item)) {
       if (value && (typeof value === 'object' || typeof value === 'string')) {
         queue.push({ item: value, path: path ? `${path}.${key}` : key });
       }
-    });
+    }
   }
-  return candidates.sort((a, b) => b.score - a.score)[0]?.html || '';
+
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0] ? candidates[0].html : '';
 }
 
 async function requestTikHub(endpoint, apiKey) {
-  const res = await fetch(endpoint, {
+  const response = await fetch(endpoint, {
     headers: {
       Authorization: `Bearer ${apiKey}`,
       Accept: 'application/json',
     },
   });
-  const text = await res.text();
-  let payload = null;
-  try { payload = JSON.parse(text); } catch { payload = text; }
-  const apiMessage = payload && typeof payload === 'object'
+  const text = await response.text();
+  let payload = text;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    payload = text;
+  }
+
+  const message = payload && typeof payload === 'object'
     ? (payload.message_zh || payload.message || payload.error)
     : '';
-
-  if (!res.ok) throw new Error(apiMessage || `TikHub HTTP ${res.status}`);
+  if (!response.ok) throw new Error(message || `TikHub HTTP ${response.status}`);
   if (payload && typeof payload === 'object' && payload.code && payload.code !== 200) {
-    throw new Error(apiMessage || `TikHub code ${payload.code}`);
+    throw new Error(message || `TikHub code ${payload.code}`);
   }
 
   const html = extractHtmlFromPayload(payload);
-  if (!html) throw new Error('TikHub 未返回可解析的文章 HTML');
+  if (!html) throw new Error('TikHub response did not contain article HTML');
   return html;
 }
 
-export async function onRequestOptions() {
-  return json({}, 204);
-}
-
-export async function onRequestGet({ request, env }) {
-  return handleCollectRequest({ request, env, body: {} });
-}
-
-export async function onRequestPost({ request, env }) {
-  let body = {};
-  try { body = await request.json(); } catch { body = {}; }
-  return handleCollectRequest({ request, env, body });
-}
-
-async function handleCollectRequest({ request, env, body }) {
+async function readBody(request) {
+  if (request.method !== 'POST') return {};
   try {
-    const requestUrl = new URL(request.url);
-    const target = new URL(body.url || requestUrl.searchParams.get('url') || '');
-    if (!/^https?:$/.test(target.protocol)) throw new Error('只支持 http/https 文章链接');
+    return await request.json();
+  } catch {
+    return {};
+  }
+}
 
-    const apiKey = body.apiKey || request.headers.get('X-TikHub-Key') || env.TIKHUB_API_KEY || env.TIKHUB_TOKEN;
-    if (!apiKey) throw new Error('服务端未配置 TIKHUB_API_KEY');
+async function collect(request, env) {
+  const requestUrl = new URL(request.url);
+  const body = await readBody(request);
+  const rawUrl = body.url || requestUrl.searchParams.get('url') || '';
+  const target = new URL(rawUrl);
+  if (!/^https?:$/.test(target.protocol)) throw new Error('Only http/https article URLs are supported');
 
-    const base = String(body.baseUrl || request.headers.get('X-TikHub-Base') || env.TIKHUB_BASE_URL || DEFAULT_TIKHUB_BASE).replace(/\/+$/, '');
-    const encoded = encodeURIComponent(target.href);
-    const endpoints = [
-      `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encoded}`,
-      `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_json?url=${encoded}`,
-    ];
+  const apiKey = body.apiKey || request.headers.get('X-TikHub-Key') || env.TIKHUB_API_KEY || env.TIKHUB_TOKEN;
+  if (!apiKey) throw new Error('Missing TIKHUB_API_KEY');
 
-    const errors = [];
-    for (const endpoint of endpoints) {
-      try {
-        const html = await requestTikHub(endpoint, apiKey);
-        return json({ ok: true, html, via: 'tikhub' });
-      } catch (err) {
-        errors.push(err.message);
-      }
+  const base = String(body.baseUrl || request.headers.get('X-TikHub-Base') || env.TIKHUB_BASE_URL || DEFAULT_TIKHUB_BASE).replace(/\/+$/, '');
+  const encoded = encodeURIComponent(target.href);
+  const endpoints = [
+    `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encoded}`,
+    `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_json?url=${encoded}`,
+  ];
+
+  const errors = [];
+  for (const endpoint of endpoints) {
+    try {
+      const html = await requestTikHub(endpoint, apiKey);
+      return { ok: true, html, via: 'tikhub' };
+    } catch (error) {
+      errors.push(error && error.message ? error.message : String(error));
     }
+  }
+  throw new Error(errors.join('; ') || 'TikHub collection failed');
+}
 
-    throw new Error(errors.join('，') || 'TikHub 采集失败');
-  } catch (err) {
-    return json({ ok: false, error: err.message || '采集失败' }, 502);
+export async function onRequest(context) {
+  const request = context.request;
+  const env = context.env || {};
+  if (request.method === 'OPTIONS') return json({}, 204);
+  if (request.method !== 'GET' && request.method !== 'POST') {
+    return json({ ok: false, error: 'Method not allowed' }, 405);
+  }
+
+  try {
+    return json(await collect(request, env));
+  } catch (error) {
+    return json({
+      ok: false,
+      error: error && error.message ? error.message : 'Collection failed',
+    }, 502);
   }
 }
