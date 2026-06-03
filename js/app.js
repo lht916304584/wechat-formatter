@@ -137,7 +137,7 @@
   const CUSTOM_STYLE_KEY = 'wechat-custom-style-config';
   const COLLECT_TIKHUB_KEY = 'zgedit-collector-tikhub-key';
   const COLLECT_TIKHUB_BASE_KEY = 'zgedit-collector-tikhub-base';
-  const COLLECT_TIKHUB_DEFAULT_BASE = 'https://user.tikhub.io';
+  const COLLECT_TIKHUB_DEFAULT_BASE = 'https://api.tikhub.io';
   const IDB_NAME = 'weedit-local-store';
   const IDB_VERSION = 1;
   const IDB_STORE = 'kv';
@@ -1680,9 +1680,7 @@
             <div class="collect-config-row">
               <input id="collectTikhubKey" type="password" placeholder="TikHub API Key，线上建议配置环境变量">
               <select id="collectTikhubBase" aria-label="TikHub 接口域名">
-                <option value="https://user.tikhub.io">用户通道 user.tikhub.io</option>
-                <option value="https://api.tikhub.dev">大陆节点 api.tikhub.dev</option>
-                <option value="https://api.tikhub.io">海外节点 api.tikhub.io</option>
+                <option value="https://api.tikhub.io">API 通道 api.tikhub.io</option>
               </select>
               <button id="btnSaveCollectTikhub" class="btn btn-outline btn-small">保存</button>
             </div>
@@ -1757,7 +1755,7 @@
 
   function normalizeStoredTikhubBase(value) {
     const base = normalizeTikhubBase(value);
-    if (base === 'https://api.tikhub.io' || base === 'https://api.tikhub.dev') {
+    if (base === 'https://user.tikhub.io' || base === 'https://api.tikhub.dev') {
       return COLLECT_TIKHUB_DEFAULT_BASE;
     }
     return base;

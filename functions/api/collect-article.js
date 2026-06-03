@@ -1,4 +1,4 @@
-const DEFAULT_TIKHUB_BASE = 'https://user.tikhub.io';
+const DEFAULT_TIKHUB_BASE = 'https://api.tikhub.io';
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -67,6 +67,26 @@ function extractHtmlFromPayload(payload) {
   return candidates[0] ? candidates[0].html : '';
 }
 
+function looksLikeWrongArticle(html) {
+  const plain = String(html || '').replace(/<[^>]+>/g, '').replace(/\s+/g, '');
+  return /defconvert_bg_div_to_table|wechat-draft-publisher|publisher\.py|fix-wechat-style|match\.group\(|\{content\}/i.test(plain);
+}
+
+function extractTikHubHtml(payload) {
+  if (typeof payload === 'string') return payload.trim();
+  if (!payload || typeof payload !== 'object') return '';
+  const data = payload.data && typeof payload.data === 'object' && 'data' in payload.data ? payload.data.data : payload.data;
+  if (typeof data === 'string') return data.trim();
+  if (data && typeof data === 'object') {
+    const directKeys = ['html', 'content_html', 'article_html', 'article_content', 'rich_media_content', 'content'];
+    for (const key of directKeys) {
+      if (typeof data[key] === 'string' && data[key].trim()) return data[key].trim();
+    }
+    return extractHtmlFromPayload(data);
+  }
+  return '';
+}
+
 async function requestTikHub(endpoint, apiKey) {
   const response = await fetch(endpoint, {
     headers: {
@@ -90,8 +110,9 @@ async function requestTikHub(endpoint, apiKey) {
     throw new Error(message || `TikHub code ${payload.code}`);
   }
 
-  const html = extractHtmlFromPayload(payload);
+  const html = extractTikHubHtml(payload);
   if (!html) throw new Error('TikHub response did not contain article HTML');
+  if (looksLikeWrongArticle(html)) throw new Error('TikHub returned content that does not look like the target WeChat article');
   return html;
 }
 
