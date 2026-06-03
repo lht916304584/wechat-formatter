@@ -89,6 +89,125 @@ function extractTikHubHtml(payload) {
   return '';
 }
 
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function cleanText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function firstString(obj, keys) {
+  for (const key of keys) {
+    if (typeof obj[key] === 'string' && obj[key].trim()) return obj[key].trim();
+    if (typeof obj[key] === 'number') return String(obj[key]);
+  }
+  return '';
+}
+
+function normalizeArticleContent(content) {
+  const text = String(content || '').trim();
+  if (!text) return '';
+  if (/<\/?[a-z][\s\S]*>/i.test(text)) return text;
+  return text
+    .split(/\n{2,}/)
+    .map(part => cleanText(part))
+    .filter(Boolean)
+    .map(part => `<p>${escapeHtml(part)}</p>`)
+    .join('');
+}
+
+function buildArticleHtml(candidate) {
+  const parts = [];
+  if (candidate.title) {
+    parts.push(`<h1 style="font-size:24px;line-height:1.4;margin:0 0 18px;font-weight:700;">${escapeHtml(candidate.title)}</h1>`);
+  }
+  const meta = [candidate.author, candidate.publishTime].filter(Boolean).join(' · ');
+  if (meta) {
+    parts.push(`<p style="color:#8a8f98;font-size:14px;margin:0 0 22px;">${escapeHtml(meta)}</p>`);
+  }
+  if (candidate.digest) {
+    parts.push(`<blockquote style="border-left:4px solid #5b5ff7;margin:0 0 22px;padding:8px 14px;background:#f6f7fb;color:#30344a;">${escapeHtml(candidate.digest)}</blockquote>`);
+  }
+  parts.push(candidate.content);
+  return parts.join('');
+}
+
+function extractArticleHtmlFromJson(payload) {
+  const root = payload && typeof payload === 'object' && 'data' in payload ? payload.data : payload;
+  const queue = [{ item: root, path: '' }];
+  const seen = new Set();
+  const candidates = [];
+  const titleKeys = ['title', 'msg_title', 'article_title', 'name'];
+  const authorKeys = ['author', 'author_name', 'nickname', 'nick_name', 'account_name', 'source_name', 'user_name'];
+  const timeKeys = ['publish_time', 'publishTime', 'create_time', 'createTime', 'update_time', 'date'];
+  const digestKeys = ['digest', 'summary', 'desc', 'description'];
+  const contentKeys = ['content', 'content_html', 'article_content', 'rich_media_content', 'html', 'body', 'text'];
+  const articleMetaRe = /appmsg|article|mp|wechat|biz|msg|content|rich_media/i;
+  const badPathRe = /docs|schema|example|sample|parameter|response|requestCollection|codeSample|error|support|cache/i;
+
+  function addCandidate(obj, path) {
+    if (!obj || typeof obj !== 'object') return;
+    let rawContent = '';
+    let contentKey = '';
+    for (const key of contentKeys) {
+      if (typeof obj[key] === 'string' && obj[key].trim().length > 80) {
+        rawContent = obj[key].trim();
+        contentKey = key;
+        break;
+      }
+    }
+    if (!rawContent) return;
+
+    const content = normalizeArticleContent(rawContent);
+    const plain = cleanText(content.replace(/<[^>]+>/g, ''));
+    if (plain.length < 80) return;
+
+    const title = cleanText(firstString(obj, titleKeys));
+    const author = cleanText(firstString(obj, authorKeys));
+    const publishTime = cleanText(firstString(obj, timeKeys));
+    const digest = cleanText(firstString(obj, digestKeys)).slice(0, 180);
+    let score = Math.min(plain.length, 8000) / 10;
+    if (title) score += 600;
+    if (author) score += 120;
+    if (publishTime) score += 80;
+    if (digest) score += 80;
+    if (/<(p|section|h1|h2|img|blockquote)\b/i.test(rawContent)) score += 240;
+    if (/id=["']js_content["']|rich_media_content/i.test(rawContent)) score += 1000;
+    if (articleMetaRe.test(path) || articleMetaRe.test(contentKey)) score += 220;
+    if ('cover' in obj || 'cover_url' in obj || 'cdn_url' in obj || 'content_url' in obj || 'source_url' in obj) score += 160;
+    if (badPathRe.test(path)) score -= 1200;
+    if (looksLikeWrongArticle(rawContent)) score -= 1400;
+
+    candidates.push({
+      html: buildArticleHtml({ title, author, publishTime, digest, content }),
+      score,
+    });
+  }
+
+  while (queue.length) {
+    const { item, path } = queue.shift();
+    if (!item) continue;
+    if (typeof item === 'string') continue;
+    if (typeof item !== 'object' || seen.has(item)) continue;
+    seen.add(item);
+    addCandidate(item, path);
+    for (const [key, value] of Object.entries(item)) {
+      if (value && typeof value === 'object') {
+        queue.push({ item: value, path: path ? `${path}.${key}` : key });
+      }
+    }
+  }
+
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0] && candidates[0].score > 0 ? candidates[0].html : '';
+}
+
 function payloadSnippet(payload, rawText) {
   const source = typeof payload === 'string' ? payload : JSON.stringify(payload || rawText || '');
   return String(source || '').replace(/\s+/g, ' ').trim().slice(0, 300);
@@ -99,7 +218,7 @@ function looksLikeWrongArticle(html) {
   return /defconvert_bg_div_to_table|wechat-draft-publisher|publisher\.py|fix-wechat-style|match\.group\(|\{content\}/i.test(plain);
 }
 
-async function requestTikHub(endpoint, apiKey) {
+async function requestTikHub(endpoint, apiKey, mode = 'html') {
   const response = await fetch(endpoint, {
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -121,7 +240,9 @@ async function requestTikHub(endpoint, apiKey) {
   if (payload && typeof payload === 'object' && payload.code && payload.code !== 200) {
     throw new Error(`${message || `TikHub code ${payload.code}`}${details ? ` (${details})` : ''}`);
   }
-  const html = extractTikHubHtml(payload);
+  const html = mode === 'json'
+    ? (extractArticleHtmlFromJson(payload) || extractTikHubHtml(payload))
+    : extractTikHubHtml(payload);
   if (!html) throw new Error('TikHub response did not contain article HTML');
   if (looksLikeWrongArticle(html)) throw new Error('TikHub returned content that does not look like the target WeChat article');
   return html;
@@ -135,14 +256,14 @@ async function collectArticle({ url, apiKey, baseUrl }) {
   const base = String(baseUrl || DEFAULT_TIKHUB_BASE).replace(/\/+$/, '');
   const encoded = encodeURIComponent(target.href);
   const endpoints = [
-    `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encoded}`,
-    `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_json?url=${encoded}`,
+    { url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encoded}`, mode: 'html' },
+    { url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_json?url=${encoded}`, mode: 'json' },
   ];
 
   const errors = [];
   for (const endpoint of endpoints) {
     try {
-      const html = await requestTikHub(endpoint, apiKey);
+      const html = await requestTikHub(endpoint.url, apiKey, endpoint.mode);
       return { ok: true, html, via: 'tikhub' };
     } catch (error) {
       errors.push(error && error.message ? error.message : String(error));
