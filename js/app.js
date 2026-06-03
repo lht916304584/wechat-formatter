@@ -14,15 +14,15 @@
   const btnContactService = document.getElementById('btnContactService');
   const contactServiceModal = document.getElementById('contactServiceModal');
   const btnCloseContactService = document.getElementById('btnCloseContactService');
-  const collectArticleModal = document.getElementById('collectArticleModal');
-  const collectArticleUrl = document.getElementById('collectArticleUrl');
-  const collectArticleStatus = document.getElementById('collectArticleStatus');
-  const collectArticlePreview = document.getElementById('collectArticlePreview');
-  const collectArticleTitle = document.getElementById('collectArticleTitle');
-  const collectArticleMeta = document.getElementById('collectArticleMeta');
-  const collectArticleMarkdown = document.getElementById('collectArticleMarkdown');
-  const btnFetchArticle = document.getElementById('btnFetchArticle');
-  const btnApplyCollectedArticle = document.getElementById('btnApplyCollectedArticle');
+  let collectArticleModal = document.getElementById('collectArticleModal');
+  let collectArticleUrl = document.getElementById('collectArticleUrl');
+  let collectArticleStatus = document.getElementById('collectArticleStatus');
+  let collectArticlePreview = document.getElementById('collectArticlePreview');
+  let collectArticleTitle = document.getElementById('collectArticleTitle');
+  let collectArticleMeta = document.getElementById('collectArticleMeta');
+  let collectArticleMarkdown = document.getElementById('collectArticleMarkdown');
+  let btnFetchArticle = document.getElementById('btnFetchArticle');
+  let btnApplyCollectedArticle = document.getElementById('btnApplyCollectedArticle');
   const historyCompareModal = document.getElementById('historyCompareModal');
   const historyCompareBody = document.getElementById('historyCompareBody');
   const btnCloseHistoryCompare = document.getElementById('btnCloseHistoryCompare');
@@ -1629,7 +1629,85 @@
     reader.readAsText(file);
   }
 
+  function refreshCollectArticleRefs() {
+    collectArticleModal = document.getElementById('collectArticleModal');
+    collectArticleUrl = document.getElementById('collectArticleUrl');
+    collectArticleStatus = document.getElementById('collectArticleStatus');
+    collectArticlePreview = document.getElementById('collectArticlePreview');
+    collectArticleTitle = document.getElementById('collectArticleTitle');
+    collectArticleMeta = document.getElementById('collectArticleMeta');
+    collectArticleMarkdown = document.getElementById('collectArticleMarkdown');
+    btnFetchArticle = document.getElementById('btnFetchArticle');
+    btnApplyCollectedArticle = document.getElementById('btnApplyCollectedArticle');
+    return collectArticleModal;
+  }
+
+  function createCollectArticleModal() {
+    const modal = document.createElement('div');
+    modal.id = 'collectArticleModal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-label', '采集文章');
+    modal.style.display = 'none';
+    modal.innerHTML = `
+      <div class="modal-content collect-modal-content">
+        <div class="modal-header">
+          <h3>采集文章</h3>
+          <button id="btnCloseCollectArticle" class="btn-icon" aria-label="关闭">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="collect-box">
+            <label for="collectArticleUrl">文章链接</label>
+            <div class="collect-url-row">
+              <input id="collectArticleUrl" type="url" placeholder="粘贴以 http 或 https 开头的文章链接" autocomplete="off">
+              <button id="btnFetchArticle" class="btn btn-primary btn-small">采集</button>
+            </div>
+          </div>
+          <div id="collectArticleStatus" class="collect-status">支持公开文章链接。若站点限制跨域，会自动尝试代理采集。</div>
+          <div class="collect-preview" id="collectArticlePreview" style="display:none">
+            <div class="collect-preview-head">
+              <strong id="collectArticleTitle">未命名文章</strong>
+              <span id="collectArticleMeta"></span>
+            </div>
+            <textarea id="collectArticleMarkdown" spellcheck="false"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btnCancelCollectArticle" class="btn btn-outline">取消</button>
+          <button id="btnApplyCollectedArticle" class="btn btn-primary" disabled>导入到编辑器</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+
+  function bindCollectArticleModal() {
+    if (!refreshCollectArticleRefs()) return false;
+    if (collectArticleModal.dataset.bound === '1') return true;
+    collectArticleModal.dataset.bound = '1';
+    document.getElementById('btnCloseCollectArticle')?.addEventListener('click', () => closeModal(collectArticleModal));
+    document.getElementById('btnCancelCollectArticle')?.addEventListener('click', () => closeModal(collectArticleModal));
+    collectArticleModal.addEventListener('click', (e) => {
+      if (e.target === collectArticleModal) closeModal(collectArticleModal);
+    });
+    btnFetchArticle?.addEventListener('click', collectArticleFromUrl);
+    btnApplyCollectedArticle?.addEventListener('click', applyCollectedArticle);
+    collectArticleUrl?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        collectArticleFromUrl();
+      }
+    });
+    return true;
+  }
+
+  function ensureCollectArticleModal() {
+    if (!refreshCollectArticleRefs()) createCollectArticleModal();
+    return bindCollectArticleModal();
+  }
+
   function setCollectStatus(message, type = '') {
+    refreshCollectArticleRefs();
     if (!collectArticleStatus) return;
     collectArticleStatus.textContent = message;
     collectArticleStatus.className = `collect-status ${type}`.trim();
@@ -1780,7 +1858,10 @@
   }
 
   function openCollectArticleModal() {
-    if (!collectArticleModal) return;
+    if (!ensureCollectArticleModal()) {
+      showToast('采集文章面板加载失败，请刷新页面后重试');
+      return;
+    }
     if (collectArticleUrl) collectArticleUrl.value = '';
     if (collectArticleMarkdown) collectArticleMarkdown.value = '';
     if (collectArticlePreview) collectArticlePreview.style.display = 'none';
@@ -1791,6 +1872,7 @@
   }
 
   async function collectArticleFromUrl() {
+    if (!ensureCollectArticleModal()) return;
     const url = normalizeArticleUrl(collectArticleUrl?.value || '');
     if (!url) {
       setCollectStatus('请输入以 http 或 https 开头的文章链接', 'error');
@@ -1823,6 +1905,7 @@
   }
 
   function applyCollectedArticle() {
+    if (!ensureCollectArticleModal()) return;
     const markdown = (collectArticleMarkdown?.value || '').trim();
     if (!markdown) {
       setCollectStatus('没有可导入的文章内容', 'error');
@@ -1980,21 +2063,7 @@
     if (e.target.files[0]) importFile(e.target.files[0]);
     fileInput.value = '';
   });
-  if (collectArticleModal) {
-    document.getElementById('btnCloseCollectArticle')?.addEventListener('click', () => closeModal(collectArticleModal));
-    document.getElementById('btnCancelCollectArticle')?.addEventListener('click', () => closeModal(collectArticleModal));
-    collectArticleModal.addEventListener('click', (e) => {
-      if (e.target === collectArticleModal) closeModal(collectArticleModal);
-    });
-    btnFetchArticle?.addEventListener('click', collectArticleFromUrl);
-    btnApplyCollectedArticle?.addEventListener('click', applyCollectedArticle);
-    collectArticleUrl?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        collectArticleFromUrl();
-      }
-    });
-  }
+  bindCollectArticleModal();
   btnClear.addEventListener('click', () => {
     if (editor.getValue() && !confirm('确定清空所有内容吗？')) return;
     editor.setValue('');

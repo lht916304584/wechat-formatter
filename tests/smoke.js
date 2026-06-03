@@ -261,6 +261,13 @@ function assert(condition, message) {
     },
     body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=', 'base64'),
   }));
+  await page.evaluate(() => document.getElementById('collectArticleModal')?.remove());
+  await page.click('#btnMore');
+  await page.click('.toolbar-dropdown-item[data-action="collect-article"]');
+  await page.waitForSelector('#collectArticleModal', { state: 'visible', timeout: 5000 });
+  await page.click('#btnCancelCollectArticle');
+  await page.waitForSelector('#collectArticleModal', { state: 'hidden', timeout: 5000 });
+
   await page.evaluate(() => window.editor.setValue(''));
   await page.click('#btnMore');
   await page.click('.toolbar-dropdown-item[data-action="collect-article"]');
