@@ -2,6 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const { collectArticle } = require('../lib/article-collector');
 
 const root = path.resolve(__dirname, '..');
 const host = '127.0.0.1';
@@ -27,6 +28,15 @@ function send(res, status, body, headers = {}) {
   res.end(body);
 }
 
+function sendJson(res, status, body) {
+  send(res, status, JSON.stringify(body), {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+  });
+}
+
 function safePath(urlPath) {
   const decoded = decodeURIComponent(urlPath.split('?')[0]);
   const normalized = path.normalize(decoded).replace(/^(\.\.[/\\])+/, '');
@@ -38,6 +48,27 @@ function safePath(urlPath) {
 
 function createServer() {
   return http.createServer((req, res) => {
+    if ((req.url || '').startsWith('/api/collect-article')) {
+      if (req.method === 'OPTIONS') {
+        sendJson(res, 204, {});
+        return;
+      }
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { ok: false, error: '只支持 GET 请求' });
+        return;
+      }
+      const requestUrl = new URL(req.url, `http://${req.headers.host || `${host}:${preferredPort}`}`);
+      collectArticle({
+        url: requestUrl.searchParams.get('url'),
+        apiKey: process.env.TIKHUB_API_KEY || process.env.TIKHUB_TOKEN,
+        baseUrl: process.env.TIKHUB_BASE_URL,
+        fetchImpl: fetch,
+      })
+        .then(result => sendJson(res, 200, result))
+        .catch(err => sendJson(res, 502, { ok: false, error: err.message || '采集失败' }));
+      return;
+    }
+
     const filePath = safePath(req.url || '/');
     if (!filePath) {
       send(res, 403, 'Forbidden', { 'Content-Type': 'text/plain; charset=utf-8' });

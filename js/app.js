@@ -23,6 +23,9 @@
   let collectArticleMarkdown = document.getElementById('collectArticleMarkdown');
   let btnFetchArticle = document.getElementById('btnFetchArticle');
   let btnApplyCollectedArticle = document.getElementById('btnApplyCollectedArticle');
+  let collectTikhubKey = document.getElementById('collectTikhubKey');
+  let collectTikhubBase = document.getElementById('collectTikhubBase');
+  let btnSaveCollectTikhub = document.getElementById('btnSaveCollectTikhub');
   const historyCompareModal = document.getElementById('historyCompareModal');
   const historyCompareBody = document.getElementById('historyCompareBody');
   const btnCloseHistoryCompare = document.getElementById('btnCloseHistoryCompare');
@@ -132,6 +135,9 @@
   const CUSTOM_TEMPLATES_KEY = 'wechat-custom-templates';
   const FAVORITES_KEY = 'wechat-template-favorites';
   const CUSTOM_STYLE_KEY = 'wechat-custom-style-config';
+  const COLLECT_TIKHUB_KEY = 'zgedit-collector-tikhub-key';
+  const COLLECT_TIKHUB_BASE_KEY = 'zgedit-collector-tikhub-base';
+  const COLLECT_TIKHUB_DEFAULT_BASE = 'https://api.tikhub.dev';
   const IDB_NAME = 'weedit-local-store';
   const IDB_VERSION = 1;
   const IDB_STORE = 'kv';
@@ -1639,6 +1645,9 @@
     collectArticleMarkdown = document.getElementById('collectArticleMarkdown');
     btnFetchArticle = document.getElementById('btnFetchArticle');
     btnApplyCollectedArticle = document.getElementById('btnApplyCollectedArticle');
+    collectTikhubKey = document.getElementById('collectTikhubKey');
+    collectTikhubBase = document.getElementById('collectTikhubBase');
+    btnSaveCollectTikhub = document.getElementById('btnSaveCollectTikhub');
     return collectArticleModal;
   }
 
@@ -1663,7 +1672,22 @@
               <button id="btnFetchArticle" class="btn btn-primary btn-small">采集</button>
             </div>
           </div>
-          <div id="collectArticleStatus" class="collect-status">支持公开文章链接。若站点限制跨域，会自动尝试代理采集。</div>
+          <div class="collect-service-box">
+            <div class="collect-service-head">
+              <strong>TikHub 公众号采集</strong>
+              <span>可选，本地兜底</span>
+            </div>
+            <div class="collect-config-row">
+              <input id="collectTikhubKey" type="password" placeholder="TikHub API Key，线上建议配置环境变量">
+              <select id="collectTikhubBase" aria-label="TikHub 接口域名">
+                <option value="https://api.tikhub.dev">大陆节点 api.tikhub.dev</option>
+                <option value="https://api.tikhub.io">海外节点 api.tikhub.io</option>
+              </select>
+              <button id="btnSaveCollectTikhub" class="btn btn-outline btn-small">保存</button>
+            </div>
+            <p>部署环境配置 TIKHUB_API_KEY 后，公众号链接会自动走服务端采集。</p>
+          </div>
+          <div id="collectArticleStatus" class="collect-status">支持公开文章链接。微信公众号文章建议配置 TikHub API Key。</div>
           <div class="collect-preview" id="collectArticlePreview" style="display:none">
             <div class="collect-preview-head">
               <strong id="collectArticleTitle">未命名文章</strong>
@@ -1692,6 +1716,7 @@
     });
     btnFetchArticle?.addEventListener('click', collectArticleFromUrl);
     btnApplyCollectedArticle?.addEventListener('click', applyCollectedArticle);
+    btnSaveCollectTikhub?.addEventListener('click', () => saveCollectTikhubConfig(true));
     collectArticleUrl?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -1721,6 +1746,45 @@
       return new URL(raw).href;
     } catch {
       return '';
+    }
+  }
+
+  function normalizeTikhubBase(value) {
+    const raw = String(value || '').trim() || COLLECT_TIKHUB_DEFAULT_BASE;
+    return raw.replace(/\/+$/, '');
+  }
+
+  function getCollectTikhubConfig() {
+    return {
+      key: getLocalStorageItem(COLLECT_TIKHUB_KEY) || '',
+      base: normalizeTikhubBase(getLocalStorageItem(COLLECT_TIKHUB_BASE_KEY) || COLLECT_TIKHUB_DEFAULT_BASE),
+    };
+  }
+
+  function loadCollectTikhubConfig() {
+    refreshCollectArticleRefs();
+    const cfg = getCollectTikhubConfig();
+    if (collectTikhubKey) collectTikhubKey.value = cfg.key;
+    if (collectTikhubBase) collectTikhubBase.value = cfg.base;
+  }
+
+  function saveCollectTikhubConfig(notify = false) {
+    refreshCollectArticleRefs();
+    const key = (collectTikhubKey?.value || '').trim();
+    const base = normalizeTikhubBase(collectTikhubBase?.value || COLLECT_TIKHUB_DEFAULT_BASE);
+    if (key) localStorage.setItem(COLLECT_TIKHUB_KEY, key);
+    else localStorage.removeItem(COLLECT_TIKHUB_KEY);
+    localStorage.setItem(COLLECT_TIKHUB_BASE_KEY, base);
+    if (notify) setCollectStatus(key ? 'TikHub API Key 已保存，本地采集可使用。' : '已清空 TikHub API Key。', key ? 'ok' : '');
+    return { key, base };
+  }
+
+  function isWechatArticleUrl(url) {
+    try {
+      const parsed = new URL(url);
+      return parsed.hostname === 'mp.weixin.qq.com' || parsed.hostname.endsWith('.mp.weixin.qq.com');
+    } catch {
+      return false;
     }
   }
 
@@ -1842,7 +1906,82 @@
     };
   }
 
+  function extractHtmlFromTikHubPayload(payload) {
+    const root = payload && typeof payload === 'object' && 'data' in payload ? payload.data : payload;
+    const queue = [root];
+    const seen = new Set();
+    const htmlKeys = ['html', 'content', 'content_html', 'article_html', 'article_content', 'rich_media_content', 'body'];
+    while (queue.length) {
+      const item = queue.shift();
+      if (!item) continue;
+      if (typeof item === 'string') {
+        const text = item.trim();
+        if (text.length > 80 && /<\/?[a-z][\s\S]*>/i.test(text)) return text;
+        continue;
+      }
+      if (typeof item !== 'object' || seen.has(item)) continue;
+      seen.add(item);
+      for (const key of htmlKeys) {
+        const value = item[key];
+        if (typeof value === 'string') {
+          const text = value.trim();
+          if (text.length > 80 && /<\/?[a-z][\s\S]*>/i.test(text)) return text;
+        }
+      }
+      Object.values(item).forEach(value => {
+        if (value && (typeof value === 'object' || typeof value === 'string')) queue.push(value);
+      });
+    }
+    return '';
+  }
+
+  async function fetchArticleViaCollectorApi(url) {
+    if (location.protocol === 'file:') throw new Error('本地 file 模式没有服务端采集接口');
+    const res = await fetch(`/api/collect-article?url=${encodeURIComponent(url)}`);
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok || payload.ok === false) throw new Error(payload.error || `服务端采集失败（${res.status}）`);
+    const html = payload.html || extractHtmlFromTikHubPayload(payload);
+    if (!html) throw new Error('服务端未返回可解析的文章 HTML');
+    return { html, via: payload.via || 'tikhub' };
+  }
+
+  async function fetchArticleViaTikHubDirect(url) {
+    const { key, base } = saveCollectTikhubConfig(false);
+    if (!key) throw new Error('未配置 TikHub API Key');
+    const endpoint = `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encodeURIComponent(url)}`;
+    const res = await fetch(endpoint, {
+      headers: {
+        Authorization: `Bearer ${key}`,
+        Accept: 'application/json',
+      },
+    });
+    const text = await res.text();
+    let payload = null;
+    try { payload = JSON.parse(text); } catch { payload = text; }
+    const apiMessage = payload && typeof payload === 'object' ? (payload.message_zh || payload.message || payload.error) : '';
+    if (!res.ok) throw new Error(apiMessage || `TikHub HTTP ${res.status}`);
+    if (payload && typeof payload === 'object' && payload.code && payload.code !== 200) {
+      throw new Error(apiMessage || `TikHub code ${payload.code}`);
+    }
+    const html = extractHtmlFromTikHubPayload(payload);
+    if (!html) throw new Error('TikHub 未返回可解析的文章 HTML');
+    return { html, via: 'tikhub' };
+  }
+
   async function fetchArticleHtml(url) {
+    const errors = [];
+    if (isWechatArticleUrl(url)) {
+      try {
+        return await fetchArticleViaCollectorApi(url);
+      } catch (err) {
+        errors.push(`服务端采集失败：${err.message}`);
+      }
+      try {
+        return await fetchArticleViaTikHubDirect(url);
+      } catch (err) {
+        errors.push(`TikHub 采集失败：${err.message}`);
+      }
+    }
     const direct = fetch(url, { mode: 'cors' }).then(res => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.text();
@@ -1850,9 +1989,13 @@
     try {
       return { html: await direct, via: 'direct' };
     } catch (directError) {
+      errors.push(`直连失败：${directError.message}`);
       const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
       const proxyRes = await fetch(proxyUrl);
-      if (!proxyRes.ok) throw new Error(`直连失败，代理采集也失败（${proxyRes.status}）`);
+      if (!proxyRes.ok) {
+        errors.push(`代理采集失败（${proxyRes.status}）`);
+        throw new Error(errors.join('，'));
+      }
       return { html: await proxyRes.text(), via: 'proxy' };
     }
   }
@@ -1866,7 +2009,8 @@
     if (collectArticleMarkdown) collectArticleMarkdown.value = '';
     if (collectArticlePreview) collectArticlePreview.style.display = 'none';
     if (btnApplyCollectedArticle) btnApplyCollectedArticle.disabled = true;
-    setCollectStatus('支持公开文章链接。若站点限制跨域，会自动尝试代理采集。');
+    loadCollectTikhubConfig();
+    setCollectStatus('支持公开文章链接。微信公众号文章会优先使用 TikHub 服务端采集。');
     openModal(collectArticleModal);
     setTimeout(() => collectArticleUrl?.focus(), 60);
   }
@@ -1889,7 +2033,8 @@
       const article = parseCollectedArticle(result.html, url);
       if (!article.markdown || article.chars < 20) throw new Error('未识别到足够的正文内容');
       if (collectArticleTitle) collectArticleTitle.textContent = article.title;
-      if (collectArticleMeta) collectArticleMeta.textContent = `${article.chars} 字 · ${result.via === 'proxy' ? '代理采集' : '直连采集'}`;
+      const viaLabel = result.via === 'tikhub' ? 'TikHub 采集' : (result.via === 'proxy' ? '代理采集' : '直连采集');
+      if (collectArticleMeta) collectArticleMeta.textContent = `${article.chars} 字 · ${viaLabel}`;
       if (collectArticleMarkdown) collectArticleMarkdown.value = article.markdown;
       if (collectArticlePreview) collectArticlePreview.style.display = 'block';
       if (btnApplyCollectedArticle) btnApplyCollectedArticle.disabled = false;

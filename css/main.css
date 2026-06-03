@@ -1574,6 +1574,54 @@ textarea:focus-visible {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
 }
+.collect-service-box {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-dark);
+}
+.collect-service-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.collect-service-head strong {
+  color: var(--text);
+}
+.collect-service-head span,
+.collect-service-box p {
+  color: var(--text-tertiary);
+}
+.collect-service-box p {
+  margin: 7px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.collect-config-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 170px auto;
+  gap: 8px;
+}
+.collect-config-row input,
+.collect-config-row select {
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+  font: inherit;
+  font-size: 12px;
+}
+.collect-config-row input:focus,
+.collect-config-row select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
+}
 .collect-status {
   min-height: 20px;
   padding: 8px 10px;
@@ -1617,6 +1665,11 @@ textarea:focus-visible {
 .collect-preview-head span {
   color: var(--text-tertiary);
   flex-shrink: 0;
+}
+@media (max-width: 720px) {
+  .collect-config-row {
+    grid-template-columns: 1fr;
+  }
 }
 #collectArticleMarkdown {
   width: 100%;
