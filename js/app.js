@@ -1755,10 +1755,23 @@
     return raw.replace(/\/+$/, '');
   }
 
+  function normalizeStoredTikhubBase(value) {
+    const base = normalizeTikhubBase(value);
+    if (base === 'https://api.tikhub.io' || base === 'https://api.tikhub.dev') {
+      return COLLECT_TIKHUB_DEFAULT_BASE;
+    }
+    return base;
+  }
+
   function getCollectTikhubConfig() {
+    const savedBase = getLocalStorageItem(COLLECT_TIKHUB_BASE_KEY);
+    const base = normalizeStoredTikhubBase(savedBase || COLLECT_TIKHUB_DEFAULT_BASE);
+    if (savedBase && normalizeTikhubBase(savedBase) !== base) {
+      localStorage.setItem(COLLECT_TIKHUB_BASE_KEY, base);
+    }
     return {
       key: getLocalStorageItem(COLLECT_TIKHUB_KEY) || '',
-      base: normalizeTikhubBase(getLocalStorageItem(COLLECT_TIKHUB_BASE_KEY) || COLLECT_TIKHUB_DEFAULT_BASE),
+      base,
     };
   }
 
@@ -1972,7 +1985,11 @@
 
   async function fetchArticleViaCollectorApi(url) {
     if (location.protocol === 'file:') throw new Error('本地 file 模式没有服务端采集接口');
-    const res = await fetch(`/api/collect-article?url=${encodeURIComponent(url)}`);
+    const { key, base } = saveCollectTikhubConfig(false);
+    const headers = {};
+    if (key) headers['X-TikHub-Key'] = key;
+    if (base) headers['X-TikHub-Base'] = base;
+    const res = await fetch(`/api/collect-article?url=${encodeURIComponent(url)}`, { headers });
     const payload = await res.json().catch(() => ({}));
     if (!res.ok || payload.ok === false) throw new Error(payload.error || `服务端采集失败（${res.status}）`);
     const html = payload.html || extractHtmlFromTikHubPayload(payload);
@@ -2011,11 +2028,14 @@
       } catch (err) {
         errors.push(`服务端采集失败：${err.message}`);
       }
-      try {
-        return await fetchArticleViaTikHubDirect(url);
-      } catch (err) {
-        errors.push(`TikHub 采集失败：${err.message}`);
+      if (location.protocol === 'file:') {
+        try {
+          return await fetchArticleViaTikHubDirect(url);
+        } catch (err) {
+          errors.push(`TikHub 直连失败：${err.message}`);
+        }
       }
+      throw new Error(errors.join('；'));
     }
     const direct = fetch(url, { mode: 'cors' }).then(res => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -2088,6 +2108,12 @@
       if (btnApplyCollectedArticle) btnApplyCollectedArticle.disabled = false;
       setCollectStatus('采集成功。可在下方微调内容后导入编辑器。', 'ok');
     } catch (err) {
+      if (collectArticlePreview) collectArticlePreview.style.display = 'none';
+      if (collectArticleMarkdown) {
+        collectArticleMarkdown.value = '';
+        collectArticleMarkdown.dataset.format = 'markdown';
+      }
+      if (btnApplyCollectedArticle) btnApplyCollectedArticle.disabled = true;
       setCollectStatus(`采集失败：${err.message}。可复制网页正文后用「导入文档」或直接粘贴到编辑器。`, 'error');
     } finally {
       if (btnFetchArticle) {

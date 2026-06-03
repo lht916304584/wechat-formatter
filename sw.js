@@ -1,4 +1,4 @@
-const CACHE_NAME = 'zgedit-static-v5';
+const CACHE_NAME = 'zgedit-static-v6';
 const CORE_ASSETS = [
   './',
   './index.html',

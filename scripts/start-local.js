@@ -33,7 +33,7 @@ function sendJson(res, status, body) {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, X-TikHub-Key, X-TikHub-Base',
   });
 }
 
@@ -60,8 +60,8 @@ function createServer() {
       const requestUrl = new URL(req.url, `http://${req.headers.host || `${host}:${preferredPort}`}`);
       collectArticle({
         url: requestUrl.searchParams.get('url'),
-        apiKey: process.env.TIKHUB_API_KEY || process.env.TIKHUB_TOKEN,
-        baseUrl: process.env.TIKHUB_BASE_URL,
+        apiKey: req.headers['x-tikhub-key'] || process.env.TIKHUB_API_KEY || process.env.TIKHUB_TOKEN,
+        baseUrl: req.headers['x-tikhub-base'] || process.env.TIKHUB_BASE_URL,
         fetchImpl: fetch,
       })
         .then(result => sendJson(res, 200, result))

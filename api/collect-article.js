@@ -5,7 +5,7 @@ function sendJson(res, status, body) {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-TikHub-Key, X-TikHub-Base');
   res.end(JSON.stringify(body));
 }
 
@@ -22,8 +22,8 @@ module.exports = async function handler(req, res) {
   try {
     const result = await collectArticle({
       url: req.query.url,
-      apiKey: process.env.TIKHUB_API_KEY || process.env.TIKHUB_TOKEN,
-      baseUrl: process.env.TIKHUB_BASE_URL,
+      apiKey: req.headers['x-tikhub-key'] || process.env.TIKHUB_API_KEY || process.env.TIKHUB_TOKEN,
+      baseUrl: req.headers['x-tikhub-base'] || process.env.TIKHUB_BASE_URL,
       fetchImpl: fetch,
     });
     sendJson(res, 200, result);
