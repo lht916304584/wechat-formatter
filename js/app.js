@@ -138,6 +138,10 @@
   const COLLECT_TIKHUB_KEY = 'zgedit-collector-tikhub-key';
   const COLLECT_TIKHUB_BASE_KEY = 'zgedit-collector-tikhub-base';
   const COLLECT_TIKHUB_DEFAULT_BASE = 'https://api.tikhub.io';
+  const COLLECT_API_FALLBACKS = [
+    '/api/collect-article',
+    'https://wechat-formatter-wine.vercel.app/api/collect-article',
+  ];
   const IDB_NAME = 'weedit-local-store';
   const IDB_VERSION = 1;
   const IDB_STORE = 'kv';
@@ -1984,30 +1988,36 @@
   async function fetchArticleViaCollectorApi(url) {
     if (location.protocol === 'file:') throw new Error('本地 file 模式没有服务端采集接口');
     const { key, base } = saveCollectTikhubConfig(false);
-    let res;
-    try {
-      res = await fetch('/api/collect-article', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url,
-          apiKey: key || undefined,
-          baseUrl: base || undefined,
-        }),
-      });
-    } catch (err) {
-      throw new Error(`无法连接服务端采集接口，请确认已重新部署并刷新页面（${err.message}）`);
-    }
-    const responseText = await res.text();
-    let payload = {};
-    try { payload = responseText ? JSON.parse(responseText) : {}; } catch { payload = {}; }
-    if (!res.ok || payload.ok === false) {
+    const body = JSON.stringify({
+      url,
+      apiKey: key || undefined,
+      baseUrl: base || undefined,
+    });
+    const errors = [];
+    for (const endpoint of COLLECT_API_FALLBACKS) {
+      let res;
+      try {
+        res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+        });
+      } catch (err) {
+        errors.push(`${endpoint}: ${err.message}`);
+        continue;
+      }
+      const responseText = await res.text();
+      let payload = {};
+      try { payload = responseText ? JSON.parse(responseText) : {}; } catch { payload = {}; }
+      if (res.ok && payload.ok !== false) {
+        const html = payload.html || extractHtmlFromTikHubPayload(payload);
+        if (!html) throw new Error('服务端未返回可解析的文章 HTML');
+        return { html, via: payload.via || 'tikhub' };
+      }
       const fallback = responseText && !responseText.trim().startsWith('<') ? responseText.slice(0, 180) : '';
-      throw new Error(payload.error || fallback || `Cloudflare/Vercel 采集函数未正常返回（HTTP ${res.status}）`);
+      errors.push(`${endpoint}: ${payload.error || fallback || `HTTP ${res.status}`}`);
     }
-    const html = payload.html || extractHtmlFromTikHubPayload(payload);
-    if (!html) throw new Error('服务端未返回可解析的文章 HTML');
-    return { html, via: payload.via || 'tikhub' };
+    throw new Error(errors.join('；') || '服务端采集接口不可用');
   }
 
   async function fetchArticleViaTikHubDirect(url) {

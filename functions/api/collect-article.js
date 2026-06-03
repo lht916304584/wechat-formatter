@@ -154,7 +154,7 @@ async function collect(request, env) {
   throw new Error(errors.join('; ') || 'TikHub collection failed');
 }
 
-export async function onRequest(context) {
+async function handleRequest(context) {
   const request = context.request;
   const env = context.env || {};
   if (request.method === 'OPTIONS') return json({}, 204);
@@ -170,4 +170,16 @@ export async function onRequest(context) {
       error: error && error.message ? error.message : 'Collection failed',
     }, 502);
   }
+}
+
+export async function onRequestOptions(context) {
+  return handleRequest(context);
+}
+
+export async function onRequestGet(context) {
+  return handleRequest(context);
+}
+
+export async function onRequestPost(context) {
+  return handleRequest(context);
 }
