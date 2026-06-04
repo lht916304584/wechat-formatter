@@ -1,4 +1,5 @@
 const DEFAULT_TIKHUB_BASE = 'https://api.tikhub.io';
+const TIKHUB_RETRY_BASE_MS = 550;
 
 function sendJson(res, status, body) {
   res.statusCode = status;
@@ -231,6 +232,10 @@ function payloadShape(payload) {
   return parts.join(' | ').slice(0, 220);
 }
 
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function looksLikeWrongArticle(html) {
   const plain = String(html || '').replace(/<[^>]+>/g, '').replace(/\s+/g, '');
   return /defconvert_bg_div_to_table|wechat-draft-publisher|publisher\.py|fix-wechat-style|match\.group\(|\{content\}/i.test(plain);
@@ -254,9 +259,15 @@ async function requestTikHub(endpoint, apiKey, mode = 'html') {
     ? (payload.message_zh || payload.message || payload.error)
     : '';
   const details = payloadSnippet(payload, text);
-  if (!response.ok) throw new Error(`${message || `TikHub HTTP ${response.status}`}${details ? ` (${details})` : ''}`);
+  if (!response.ok) {
+    const error = new Error(`${message || `TikHub HTTP ${response.status}`}${details ? ` (${details})` : ''}`);
+    error.retryable = response.status === 400 && /request failed|please retry|请求失败|重试/i.test(`${message} ${details}`);
+    throw error;
+  }
   if (payload && typeof payload === 'object' && payload.code && payload.code !== 200) {
-    throw new Error(`${message || `TikHub code ${payload.code}`}${details ? ` (${details})` : ''}`);
+    const error = new Error(`${message || `TikHub code ${payload.code}`}${details ? ` (${details})` : ''}`);
+    error.retryable = Number(payload.code) === 400 && /request failed|please retry|请求失败|重试/i.test(`${message} ${details}`);
+    throw error;
   }
   const html = mode === 'json' ? extractArticleHtmlFromJson(payload) : extractTikHubHtml(payload);
   if (!html) {
@@ -270,6 +281,23 @@ async function requestTikHub(endpoint, apiKey, mode = 'html') {
   return html;
 }
 
+async function requestTikHubWithRetry(endpoint, apiKey, mode, attempts) {
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await requestTikHub(endpoint, apiKey, mode);
+    } catch (error) {
+      lastError = error;
+      if (!error.retryable || attempt >= attempts) break;
+      await wait(TIKHUB_RETRY_BASE_MS * attempt);
+    }
+  }
+  if (lastError && lastError.retryable && attempts > 1) {
+    lastError.message = `${lastError.message}; retried ${attempts} times`;
+  }
+  throw lastError || new Error('TikHub request failed');
+}
+
 async function collectArticle({ url, apiKey, baseUrl }) {
   const target = new URL(String(url || '').trim());
   if (!/^https?:$/.test(target.protocol)) throw new Error('Only http/https article URLs are supported');
@@ -278,14 +306,14 @@ async function collectArticle({ url, apiKey, baseUrl }) {
   const base = String(baseUrl || DEFAULT_TIKHUB_BASE).replace(/\/+$/, '');
   const encoded = encodeURIComponent(target.href);
   const endpoints = [
-    { url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encoded}`, mode: 'html' },
-    { url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_json?url=${encoded}`, mode: 'json' },
+    { url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encoded}`, mode: 'html', attempts: 3 },
+    { url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_json?url=${encoded}`, mode: 'json', attempts: 4 },
   ];
 
   const errors = [];
   for (const endpoint of endpoints) {
     try {
-      const html = await requestTikHub(endpoint.url, apiKey, endpoint.mode);
+      const html = await requestTikHubWithRetry(endpoint.url, apiKey, endpoint.mode, endpoint.attempts);
       return { ok: true, html, via: 'tikhub' };
     } catch (error) {
       errors.push(error && error.message ? error.message : String(error));
