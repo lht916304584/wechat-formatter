@@ -213,6 +213,24 @@ function payloadSnippet(payload, rawText) {
   return String(source || '').replace(/\s+/g, ' ').trim().slice(0, 300);
 }
 
+function payloadShape(payload) {
+  const root = payload && typeof payload === 'object' && 'data' in payload ? payload.data : payload;
+  const queue = [{ item: root, path: 'data' }];
+  const seen = new Set();
+  const parts = [];
+  while (queue.length && parts.length < 6) {
+    const { item, path } = queue.shift();
+    if (!item || typeof item !== 'object' || seen.has(item)) continue;
+    seen.add(item);
+    const keys = Object.keys(item).slice(0, 10);
+    parts.push(`${path}:{${keys.join(',')}}`);
+    for (const [key, value] of Object.entries(item)) {
+      if (value && typeof value === 'object') queue.push({ item: value, path: `${path}.${key}` });
+    }
+  }
+  return parts.join(' | ').slice(0, 220);
+}
+
 function looksLikeWrongArticle(html) {
   const plain = String(html || '').replace(/<[^>]+>/g, '').replace(/\s+/g, '');
   return /defconvert_bg_div_to_table|wechat-draft-publisher|publisher\.py|fix-wechat-style|match\.group\(|\{content\}/i.test(plain);
@@ -240,11 +258,15 @@ async function requestTikHub(endpoint, apiKey, mode = 'html') {
   if (payload && typeof payload === 'object' && payload.code && payload.code !== 200) {
     throw new Error(`${message || `TikHub code ${payload.code}`}${details ? ` (${details})` : ''}`);
   }
-  const html = mode === 'json'
-    ? (extractArticleHtmlFromJson(payload) || extractTikHubHtml(payload))
-    : extractTikHubHtml(payload);
-  if (!html) throw new Error('TikHub response did not contain article HTML');
-  if (looksLikeWrongArticle(html)) throw new Error('TikHub returned content that does not look like the target WeChat article');
+  const html = mode === 'json' ? extractArticleHtmlFromJson(payload) : extractTikHubHtml(payload);
+  if (!html) {
+    const shape = mode === 'json' ? payloadShape(payload) : '';
+    throw new Error(`${mode === 'json' ? 'TikHub JSON response did not contain target article content' : 'TikHub response did not contain article HTML'}${shape ? `; shape=${shape}` : ''}`);
+  }
+  if (looksLikeWrongArticle(html)) {
+    const shape = mode === 'json' ? payloadShape(payload) : '';
+    throw new Error(`${mode === 'json' ? 'TikHub JSON response matched non-article content' : 'TikHub returned content that does not look like the target WeChat article'}${shape ? `; shape=${shape}` : ''}`);
+  }
   return html;
 }
 
