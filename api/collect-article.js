@@ -112,6 +112,19 @@ function firstString(obj, keys) {
 }
 
 function normalizeArticleContent(content) {
+  if (Array.isArray(content)) {
+    return content
+      .map(item => {
+        if (typeof item === 'string') return item;
+        if (item && typeof item === 'object') {
+          return firstString(item, ['content', 'text', 'raw_content', 'full_text', 'summary', 'title']);
+        }
+        return '';
+      })
+      .map(part => normalizeArticleContent(part))
+      .filter(Boolean)
+      .join('');
+  }
   const text = String(content || '').trim();
   if (!text) return '';
   if (/<\/?[a-z][\s\S]*>/i.test(text)) return text;
@@ -148,17 +161,22 @@ function extractArticleHtmlFromJson(payload) {
   const authorKeys = ['author', 'author_name', 'nickname', 'nick_name', 'account_name', 'source_name', 'user_name'];
   const timeKeys = ['publish_time', 'publishTime', 'create_time', 'createTime', 'update_time', 'date'];
   const digestKeys = ['digest', 'summary', 'desc', 'description'];
-  const contentKeys = ['content', 'content_html', 'article_content', 'rich_media_content', 'html', 'body', 'text'];
+  const contentKeys = ['raw_content', 'full_text', 'content', 'content_html', 'article_content', 'rich_media_content', 'html', 'body', 'text', 'sections'];
   const articleMetaRe = /appmsg|article|mp|wechat|biz|msg|content|rich_media/i;
   const badPathRe = /docs|schema|example|sample|parameter|response|requestCollection|codeSample|error|support|cache/i;
+  const fallbackTitle = cleanText(firstString(root || {}, titleKeys));
+  const fallbackAuthor = cleanText(firstString(root || {}, authorKeys));
+  const fallbackTime = cleanText(firstString(root || {}, timeKeys));
+  const fallbackDigest = cleanText(firstString(root || {}, digestKeys)).slice(0, 180);
 
   function addCandidate(obj, path) {
     if (!obj || typeof obj !== 'object') return;
-    let rawContent = '';
+    let rawContent = null;
     let contentKey = '';
     for (const key of contentKeys) {
-      if (typeof obj[key] === 'string' && obj[key].trim().length > 80) {
-        rawContent = obj[key].trim();
+      const value = obj[key];
+      if ((typeof value === 'string' && value.trim().length > 80) || (Array.isArray(value) && value.length)) {
+        rawContent = value;
         contentKey = key;
         break;
       }
@@ -169,21 +187,24 @@ function extractArticleHtmlFromJson(payload) {
     const plain = cleanText(content.replace(/<[^>]+>/g, ''));
     if (plain.length < 80) return;
 
-    const title = cleanText(firstString(obj, titleKeys));
-    const author = cleanText(firstString(obj, authorKeys));
-    const publishTime = cleanText(firstString(obj, timeKeys));
-    const digest = cleanText(firstString(obj, digestKeys)).slice(0, 180);
+    const title = cleanText(firstString(obj, titleKeys)) || fallbackTitle;
+    const author = cleanText(firstString(obj, authorKeys)) || fallbackAuthor;
+    const publishTime = cleanText(firstString(obj, timeKeys)) || fallbackTime;
+    const digest = cleanText(firstString(obj, digestKeys)).slice(0, 180) || fallbackDigest;
     let score = Math.min(plain.length, 8000) / 10;
     if (title) score += 600;
     if (author) score += 120;
     if (publishTime) score += 80;
     if (digest) score += 80;
-    if (/<(p|section|h1|h2|img|blockquote)\b/i.test(rawContent)) score += 240;
-    if (/id=["']js_content["']|rich_media_content/i.test(rawContent)) score += 1000;
+    if (/<(p|section|h1|h2|img|blockquote)\b/i.test(String(rawContent))) score += 240;
+    if (/id=["']js_content["']|rich_media_content/i.test(String(rawContent))) score += 1000;
+    if (contentKey === 'raw_content') score += 700;
+    if (contentKey === 'full_text') score += 420;
+    if (contentKey === 'sections') score += 320;
     if (articleMetaRe.test(path) || articleMetaRe.test(contentKey)) score += 220;
-    if ('cover' in obj || 'cover_url' in obj || 'cdn_url' in obj || 'content_url' in obj || 'source_url' in obj) score += 160;
+    if ('cover' in obj || 'cover_url' in obj || 'cdn_url' in obj || 'content_url' in obj || 'source_url' in obj || fallbackTitle) score += 160;
     if (badPathRe.test(path)) score -= 1200;
-    if (looksLikeWrongArticle(rawContent)) score -= 1400;
+    if (looksLikeWrongArticle(String(rawContent))) score -= 1400;
 
     candidates.push({
       html: buildArticleHtml({ title, author, publishTime, digest, content }),
