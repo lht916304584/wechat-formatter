@@ -1765,6 +1765,14 @@
     return base;
   }
 
+  function collectTikhubBases(primaryBase) {
+    const primary = normalizeTikhubBase(primaryBase || COLLECT_TIKHUB_DEFAULT_BASE);
+    const fallback = primary === 'https://api.tikhub.io'
+      ? 'https://user.tikhub.io'
+      : (primary === 'https://user.tikhub.io' ? COLLECT_TIKHUB_DEFAULT_BASE : '');
+    return [primary, fallback].filter(Boolean).filter((base, index, arr) => arr.indexOf(base) === index);
+  }
+
   function getCollectTikhubConfig() {
     const savedBase = getLocalStorageItem(COLLECT_TIKHUB_BASE_KEY);
     const base = normalizeStoredTikhubBase(savedBase || COLLECT_TIKHUB_DEFAULT_BASE);
@@ -2146,10 +2154,10 @@
     const { key, base } = saveCollectTikhubConfig(false);
     if (!key) throw new Error('未配置 TikHub API Key');
     const encoded = encodeURIComponent(url);
-    const endpoints = [
-      { url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encoded}`, via: 'tikhub-html' },
-      { url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_json?url=${encoded}`, via: 'tikhub-json' },
-    ];
+    const endpoints = collectTikhubBases(base).flatMap((item, index) => [
+      { url: `${item}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encoded}`, via: index === 0 ? 'tikhub-html' : 'tikhub-html-alt' },
+      { url: `${item}/api/v1/wechat_mp/web/fetch_mp_article_detail_json?url=${encoded}`, via: index === 0 ? 'tikhub-json' : 'tikhub-json-alt' },
+    ]);
     const errors = [];
     for (const endpoint of endpoints) {
       const res = await fetch(endpoint.url, {

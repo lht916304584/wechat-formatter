@@ -101,6 +101,14 @@ function isRetryableTikHubError(status, message, details) {
     || /request failed|please retry|timeout|timed out|gateway time-out|gateway timeout|请求失败|重试|超时/i.test(`${message || ''} ${details || ''}`);
 }
 
+function collectTikHubBases(primaryBase) {
+  const primary = String(primaryBase || DEFAULT_TIKHUB_BASE).replace(/\/+$/, '');
+  const fallback = /\/\/api\.tikhub\.io$/i.test(primary)
+    ? 'https://user.tikhub.io'
+    : (/\/\/user\.tikhub\.io$/i.test(primary) ? DEFAULT_TIKHUB_BASE : '');
+  return [primary, fallback].filter(Boolean).filter((base, index, arr) => arr.indexOf(base) === index);
+}
+
 function escapeHtml(value) {
   return String(value || '')
     .replace(/&/g, '&amp;')
@@ -332,12 +340,12 @@ async function collect(request, env) {
   const apiKey = env.TIKHUB_API_KEY || env.TIKHUB_TOKEN || body.apiKey || request.headers.get('X-TikHub-Key');
   if (!apiKey) throw new Error('Missing TIKHUB_API_KEY');
 
-  const base = String(env.TIKHUB_BASE_URL || body.baseUrl || request.headers.get('X-TikHub-Base') || DEFAULT_TIKHUB_BASE).replace(/\/+$/, '');
   const encoded = encodeURIComponent(target.href);
-  const endpoints = [
-    { url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encoded}`, via: 'tikhub-html', mode: 'html', attempts: 2 },
-    { url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_json?url=${encoded}`, via: 'tikhub-json', mode: 'json', attempts: 2 },
-  ];
+  const bases = collectTikHubBases(env.TIKHUB_BASE_URL || body.baseUrl || request.headers.get('X-TikHub-Base') || DEFAULT_TIKHUB_BASE);
+  const endpoints = bases.flatMap((base, index) => [
+    { url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encoded}`, via: index === 0 ? 'tikhub-html' : 'tikhub-html-alt', mode: 'html', attempts: 2 },
+    { url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_json?url=${encoded}`, via: index === 0 ? 'tikhub-json' : 'tikhub-json-alt', mode: 'json', attempts: 2 },
+  ]);
   const errors = [];
   for (const endpoint of endpoints) {
     try {
