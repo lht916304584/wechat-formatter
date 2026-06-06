@@ -2156,8 +2156,8 @@
     if (!key) throw new Error('未配置 TikHub API Key');
     const encoded = encodeURIComponent(url);
     const endpoints = collectTikhubBases(base).flatMap((item, index) => [
-      { url: `${item}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encoded}`, via: index === 0 ? 'tikhub-html' : 'tikhub-html-alt' },
       { url: `${item}/api/v1/wechat_mp/web/fetch_mp_article_detail_json?url=${encoded}`, via: index === 0 ? 'tikhub-json' : 'tikhub-json-alt' },
+      { url: `${item}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encoded}`, via: index === 0 ? 'tikhub-html' : 'tikhub-html-alt' },
     ]);
     const errors = [];
     for (const endpoint of endpoints) {
