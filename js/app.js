@@ -2037,7 +2037,12 @@
           const part = normalizePart(value[key]);
           if (part) return part;
         }
-        return '';
+        const skipKeys = new Set(['author', 'biz', 'cover_image', 'datetime', 'description', 'ip_location', 'ip_location_country', 'metadata', 'original', 'publish_info', 'source', 'user_id']);
+        return Object.entries(value)
+          .filter(([key]) => !skipKeys.has(key))
+          .map(([, item]) => normalizePart(item))
+          .filter(Boolean)
+          .join('');
       }
       const text = String(value || '').trim();
       if (!text) return '';
