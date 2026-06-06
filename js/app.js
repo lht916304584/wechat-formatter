@@ -2107,24 +2107,36 @@
   async function fetchArticleViaTikHubDirect(url) {
     const { key, base } = saveCollectTikhubConfig(false);
     if (!key) throw new Error('未配置 TikHub API Key');
-    const endpoint = `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encodeURIComponent(url)}`;
-    const res = await fetch(endpoint, {
-      headers: {
-        Authorization: `Bearer ${key}`,
-        Accept: 'application/json',
-      },
-    });
-    const text = await res.text();
-    let payload = null;
-    try { payload = JSON.parse(text); } catch { payload = text; }
-    const apiMessage = payload && typeof payload === 'object' ? (payload.message_zh || payload.message || payload.error) : '';
-    if (!res.ok) throw new Error(apiMessage || `TikHub HTTP ${res.status}`);
-    if (payload && typeof payload === 'object' && payload.code && payload.code !== 200) {
-      throw new Error(apiMessage || `TikHub code ${payload.code}`);
+    const encoded = encodeURIComponent(url);
+    const endpoints = [
+      { url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encoded}`, via: 'tikhub-html' },
+      { url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_json?url=${encoded}`, via: 'tikhub-json' },
+    ];
+    const errors = [];
+    for (const endpoint of endpoints) {
+      const res = await fetch(endpoint.url, {
+        headers: {
+          Authorization: `Bearer ${key}`,
+          Accept: 'application/json',
+        },
+      });
+      const text = await res.text();
+      let payload = null;
+      try { payload = JSON.parse(text); } catch { payload = text; }
+      const apiMessage = payload && typeof payload === 'object' ? (payload.message_zh || payload.message || payload.error) : '';
+      if (!res.ok) {
+        errors.push(`${endpoint.via}: ${apiMessage || `TikHub HTTP ${res.status}`}`);
+        continue;
+      }
+      if (payload && typeof payload === 'object' && payload.code && payload.code !== 200) {
+        errors.push(`${endpoint.via}: ${apiMessage || `TikHub code ${payload.code}`}`);
+        continue;
+      }
+      const html = extractHtmlFromTikHubPayload(payload);
+      if (html) return { html, via: endpoint.via };
+      errors.push(`${endpoint.via}: TikHub 未返回可解析的文章 HTML`);
     }
-    const html = extractHtmlFromTikHubPayload(payload);
-    if (!html) throw new Error('TikHub 未返回可解析的文章 HTML');
-    return { html, via: 'tikhub' };
+    throw new Error(errors.join('；') || 'TikHub 未返回可解析的文章 HTML');
   }
 
   async function fetchArticleHtml(url) {
@@ -2200,12 +2212,13 @@
     setCollectStatus('正在采集文章内容...');
     try {
       const result = await fetchArticleHtml(url);
-      const article = result.via === 'tikhub'
+      const isTikHubResult = String(result.via || '').startsWith('tikhub');
+      const article = isTikHubResult
         ? parseCollectedArticleHtml(result.html, url)
         : parseCollectedArticle(result.html, url);
       if (!article.content || article.chars < 20) throw new Error('未识别到足够的正文内容');
       if (collectArticleTitle) collectArticleTitle.textContent = article.title;
-      const viaLabel = result.via === 'tikhub' ? 'TikHub 采集' : (result.via === 'proxy' ? '代理采集' : '直连采集');
+      const viaLabel = result.via === 'tikhub-json' ? 'TikHub JSON 降级采集' : (isTikHubResult ? 'TikHub 采集' : (result.via === 'proxy' ? '代理采集' : '直连采集'));
       if (collectArticleMeta) collectArticleMeta.textContent = `${article.chars} 字 · ${viaLabel} · ${article.format === 'html' ? 'HTML 导入' : 'Markdown 导入'}`;
       if (collectArticleMarkdown) {
         collectArticleMarkdown.value = article.content;

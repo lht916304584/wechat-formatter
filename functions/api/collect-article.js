@@ -96,6 +96,11 @@ function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function isRetryableTikHubError(status, message, details) {
+  return [400, 408, 429, 500, 502, 503, 504].includes(Number(status))
+    || /request failed|please retry|timeout|timed out|gateway time-out|gateway timeout|请求失败|重试|超时/i.test(`${message || ''} ${details || ''}`);
+}
+
 function escapeHtml(value) {
   return String(value || '')
     .replace(/&/g, '&amp;')
@@ -241,12 +246,12 @@ async function requestTikHub(endpoint, apiKey) {
   const details = payloadSnippet(payload, text);
   if (!response.ok) {
     const error = new Error(`${message || `TikHub HTTP ${response.status}`}${details ? ` (${details})` : ''}`);
-    error.retryable = response.status === 400 && /request failed|please retry|请求失败|重试/i.test(`${message} ${details}`);
+    error.retryable = isRetryableTikHubError(response.status, message, details);
     throw error;
   }
   if (payload && typeof payload === 'object' && payload.code && payload.code !== 200) {
     const error = new Error(`${message || `TikHub code ${payload.code}`}${details ? ` (${details})` : ''}`);
-    error.retryable = Number(payload.code) === 400 && /request failed|please retry|请求失败|重试/i.test(`${message} ${details}`);
+    error.retryable = isRetryableTikHubError(payload.code, message, details);
     throw error;
   }
 
@@ -296,9 +301,20 @@ async function collect(request, env) {
 
   const base = String(env.TIKHUB_BASE_URL || body.baseUrl || request.headers.get('X-TikHub-Base') || DEFAULT_TIKHUB_BASE).replace(/\/+$/, '');
   const encoded = encodeURIComponent(target.href);
-  const endpoint = `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encoded}`;
-  const html = await requestTikHubWithRetry(endpoint, apiKey, 4);
-  return { ok: true, html, via: 'tikhub' };
+  const endpoints = [
+    { url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encoded}`, via: 'tikhub-html', attempts: 2 },
+    { url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_json?url=${encoded}`, via: 'tikhub-json', attempts: 2 },
+  ];
+  const errors = [];
+  for (const endpoint of endpoints) {
+    try {
+      const html = await requestTikHubWithRetry(endpoint.url, apiKey, endpoint.attempts);
+      return { ok: true, html, via: endpoint.via };
+    } catch (error) {
+      errors.push(`${endpoint.via}: ${error.message}`);
+    }
+  }
+  throw new Error(errors.join('；') || 'TikHub request failed');
 }
 
 async function handleRequest(context) {
