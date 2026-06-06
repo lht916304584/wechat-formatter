@@ -40,7 +40,8 @@ function extractHtmlFromPayload(payload) {
     if (/<article[\s>]/i.test(text)) value += 500;
     value += Math.min(plain.length, 5000) / 10;
     value += (text.match(/<(p|section|h1|h2|img|blockquote)\b/gi) || []).length * 12;
-    if (/function\s*\(|def\s+\w+\(|match\.group|Traceback|import\s+\w+/i.test(plain)) value -= 350;
+    if (/function\s*\(|def\s+\w+\(|match\.group|Traceback|import\s+\w+/i.test(plain)) value -= 1200;
+    if (/wechat-draft-publisher|fix-wechat-style\.py|publisher\.py|defconvert_bg_div_to_table|SKILL\.md/i.test(plain)) value -= 4000;
     return value;
   }
 
@@ -72,18 +73,23 @@ function extractHtmlFromPayload(payload) {
   }
 
   candidates.sort((a, b) => b.score - a.score);
-  return candidates[0] ? candidates[0].html : '';
+  return candidates[0] && candidates[0].score > 0 ? candidates[0].html : '';
 }
 
 function extractTikHubHtml(payload) {
-  if (typeof payload === 'string') return payload.trim();
+  if (typeof payload === 'string') return extractHtmlFromPayload({ html: payload }) || '';
   if (!payload || typeof payload !== 'object') return '';
   const data = payload.data && typeof payload.data === 'object' && 'data' in payload.data ? payload.data.data : payload.data;
-  if (typeof data === 'string') return data.trim();
+  if (typeof data === 'string') return extractHtmlFromPayload({ html: data }) || '';
   if (data && typeof data === 'object') {
+    const scored = extractHtmlFromPayload(data);
+    if (scored) return scored;
     const directKeys = ['html', 'content_html', 'article_html', 'article_content', 'rich_media_content', 'content'];
     for (const key of directKeys) {
-      if (typeof data[key] === 'string' && data[key].trim()) return data[key].trim();
+      if (typeof data[key] === 'string' && data[key].trim()) {
+        const direct = extractHtmlFromPayload({ [key]: data[key] });
+        if (direct) return direct;
+      }
     }
     return extractHtmlFromPayload(data);
   }

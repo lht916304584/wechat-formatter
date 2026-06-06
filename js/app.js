@@ -1906,7 +1906,7 @@
       doc.querySelector('meta[property="og:title"]')?.content ||
       doc.querySelector('h1')?.textContent ||
       doc.title ||
-      '采集文章'
+      ''
     ).replace(/\s+[-_|].*$/, '').slice(0, 80);
     const root = pickArticleRoot(doc);
     let body = cleanCollectedText(htmlNodeToMarkdown(root, sourceUrl));
@@ -1956,14 +1956,68 @@
     };
   }
 
+  function looksLikeKnownWrongCollection(value) {
+    const plain = stripHtmlToText(String(value || '')).replace(/\s+/g, '');
+    return /wechat-draft-publisher|fix-wechat-style\.py|publisher\.py|defconvert_bg_div_to_table|SKILL\.md/i.test(plain);
+  }
+
+  function extractBestCollectedHtml(payload) {
+    const queue = [{ item: payload, path: '' }];
+    const seen = new Set();
+    const candidates = [];
+    const keys = ['html', 'content_html', 'article_html', 'article_content', 'rich_media_content', 'body', 'content'];
+
+    function score(html, path) {
+      const plain = stripHtmlToText(html).replace(/\s+/g, '');
+      let value = Math.min(plain.length, 5000) / 10;
+      if (/id=["']js_content["']/i.test(html)) value += 1200;
+      if (/class=["'][^"']*rich_media_content/i.test(html)) value += 1000;
+      if (/rich_media_content|js_content|article_content|content_html/i.test(path)) value += 700;
+      value += (html.match(/<(p|section|h1|h2|img|blockquote)\b/gi) || []).length * 12;
+      if (/function\s*\(|def\s+\w+\(|match\.group|Traceback|import\s+\w+/i.test(plain)) value -= 1200;
+      if (looksLikeKnownWrongCollection(html)) value -= 4000;
+      return value;
+    }
+
+    function add(value, path) {
+      if (typeof value !== 'string') return;
+      const html = value.trim();
+      if (html.length <= 80 || !/<\/?[a-z][\s\S]*>/i.test(html)) return;
+      candidates.push({ html, score: score(html, path) });
+    }
+
+    while (queue.length) {
+      const { item, path } = queue.shift();
+      if (!item) continue;
+      if (typeof item === 'string') {
+        add(item, path);
+        continue;
+      }
+      if (typeof item !== 'object' || seen.has(item)) continue;
+      seen.add(item);
+      for (const key of keys) add(item[key], path ? `${path}.${key}` : key);
+      Object.entries(item).forEach(([key, value]) => {
+        if (value && (typeof value === 'object' || typeof value === 'string')) {
+          queue.push({ item: value, path: path ? `${path}.${key}` : key });
+        }
+      });
+    }
+
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates[0] && candidates[0].score > 0 ? candidates[0].html : '';
+  }
+
   function extractHtmlFromTikHubPayload(payload) {
     if (typeof payload === 'string') return payload.trim();
     let data = payload && typeof payload === 'object' ? payload.data : null;
     if (data && typeof data === 'object' && data.data && typeof data.data === 'object') data = data.data;
-    if (typeof data === 'string') return data.trim();
+    if (typeof data === 'string') return looksLikeKnownWrongCollection(data) ? '' : data.trim();
     if (!data || typeof data !== 'object') return '';
+    const scored = extractBestCollectedHtml(data);
+    if (scored) return scored;
     for (const key of ['html', 'content_html', 'article_html', 'article_content', 'rich_media_content', 'content', 'body']) {
-      if (typeof data[key] === 'string' && data[key].trim()) return data[key].trim();
+      const value = data[key];
+      if (typeof value === 'string' && value.trim() && !looksLikeKnownWrongCollection(value)) return value.trim();
     }
     const contentData = data.content && typeof data.content === 'object' ? data.content : {};
     const article = contentData.article && typeof contentData.article === 'object' ? contentData.article : {};
