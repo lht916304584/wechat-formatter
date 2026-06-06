@@ -1685,6 +1685,7 @@
               <input id="collectTikhubKey" type="password" placeholder="TikHub API Key，线上建议配置环境变量">
               <select id="collectTikhubBase" aria-label="TikHub 接口域名">
                 <option value="https://api.tikhub.io">API 通道 api.tikhub.io</option>
+                <option value="https://api.tikhub.dev">CN API api.tikhub.dev</option>
               </select>
               <button id="btnSaveCollectTikhub" class="btn btn-outline btn-small">保存</button>
             </div>
@@ -1759,7 +1760,7 @@
 
   function normalizeStoredTikhubBase(value) {
     const base = normalizeTikhubBase(value);
-    if (base === 'https://user.tikhub.io' || base === 'https://api.tikhub.dev') {
+    if (base === 'https://user.tikhub.io') {
       return COLLECT_TIKHUB_DEFAULT_BASE;
     }
     return base;
@@ -1768,8 +1769,8 @@
   function collectTikhubBases(primaryBase) {
     const primary = normalizeTikhubBase(primaryBase || COLLECT_TIKHUB_DEFAULT_BASE);
     const fallback = primary === 'https://api.tikhub.io'
-      ? 'https://user.tikhub.io'
-      : (primary === 'https://user.tikhub.io' ? COLLECT_TIKHUB_DEFAULT_BASE : '');
+      ? 'https://api.tikhub.dev'
+      : (primary === 'https://api.tikhub.dev' ? COLLECT_TIKHUB_DEFAULT_BASE : '');
     return [primary, fallback].filter(Boolean).filter((base, index, arr) => arr.indexOf(base) === index);
   }
 

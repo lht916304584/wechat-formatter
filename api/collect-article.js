@@ -268,8 +268,8 @@ function isRetryableTikHubError(status, message, details) {
 function collectTikHubBases(primaryBase) {
   const primary = String(primaryBase || DEFAULT_TIKHUB_BASE).replace(/\/+$/, '');
   const fallback = /\/\/api\.tikhub\.io$/i.test(primary)
-    ? 'https://user.tikhub.io'
-    : (/\/\/user\.tikhub\.io$/i.test(primary) ? DEFAULT_TIKHUB_BASE : '');
+    ? 'https://api.tikhub.dev'
+    : (/\/\/api\.tikhub\.dev$/i.test(primary) ? DEFAULT_TIKHUB_BASE : '');
   return [primary, fallback].filter(Boolean).filter((base, index, arr) => arr.indexOf(base) === index);
 }
 
