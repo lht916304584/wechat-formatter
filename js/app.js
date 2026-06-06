@@ -1957,32 +1957,51 @@
   }
 
   function extractHtmlFromTikHubPayload(payload) {
-    const root = payload && typeof payload === 'object' && 'data' in payload ? payload.data : payload;
-    const queue = [root];
-    const seen = new Set();
-    const htmlKeys = ['html', 'content', 'content_html', 'article_html', 'article_content', 'rich_media_content', 'body'];
-    while (queue.length) {
-      const item = queue.shift();
-      if (!item) continue;
-      if (typeof item === 'string') {
-        const text = item.trim();
-        if (text.length > 80 && /<\/?[a-z][\s\S]*>/i.test(text)) return text;
-        continue;
-      }
-      if (typeof item !== 'object' || seen.has(item)) continue;
-      seen.add(item);
-      for (const key of htmlKeys) {
-        const value = item[key];
-        if (typeof value === 'string') {
-          const text = value.trim();
-          if (text.length > 80 && /<\/?[a-z][\s\S]*>/i.test(text)) return text;
+    let data = payload && typeof payload === 'object' ? payload.data : null;
+    if (data && typeof data === 'object' && data.data && typeof data.data === 'object') data = data.data;
+    if (!data || typeof data !== 'object') return '';
+    const contentData = data.content && typeof data.content === 'object' ? data.content : {};
+    const article = contentData.article && typeof contentData.article === 'object' ? contentData.article : {};
+
+    function normalizePart(value) {
+      if (Array.isArray(value)) return value.map(normalizePart).filter(Boolean).join('');
+      if (value && typeof value === 'object') {
+        const numbered = Object.keys(value)
+          .filter(key => /^\d+$/.test(key))
+          .sort((a, b) => Number(a) - Number(b))
+          .map(key => value[key]);
+        if (numbered.length) return numbered.map(normalizePart).filter(Boolean).join('');
+        for (const key of ['html', 'content', 'text', 'paragraph', 'value', 'summary', 'title']) {
+          if (typeof value[key] === 'string' && value[key].trim()) return normalizePart(value[key]);
         }
+        return '';
       }
-      Object.values(item).forEach(value => {
-        if (value && (typeof value === 'object' || typeof value === 'string')) queue.push(value);
-      });
+      const text = String(value || '').trim();
+      if (!text) return '';
+      if (/<\/?[a-z][\s\S]*>/i.test(text)) return text;
+      return text
+        .split(/\n{2,}/)
+        .map(part => cleanCollectedText(part))
+        .filter(Boolean)
+        .map(part => `<p>${escapeHtml(part)}</p>`)
+        .join('');
     }
-    return '';
+
+    const content = normalizePart(contentData.raw_content)
+      || normalizePart(article.full_text)
+      || normalizePart(article.sections);
+    if (!cleanCollectedText(stripHtmlToText(content))) return '';
+    const title = cleanCollectedText(data.title || article.title || '');
+    const author = cleanCollectedText(data.author || '');
+    const publishTime = cleanCollectedText(data.datetime || '');
+    const summary = cleanCollectedText(article.summary || '').slice(0, 180);
+    const blocks = [];
+    if (title) blocks.push(`<h1 style="font-size:24px;line-height:1.4;margin:0 0 18px;font-weight:700;">${escapeHtml(title)}</h1>`);
+    const meta = [author, publishTime].filter(Boolean).join(' · ');
+    if (meta) blocks.push(`<p style="color:#8a8f98;font-size:14px;margin:0 0 22px;">${escapeHtml(meta)}</p>`);
+    if (summary) blocks.push(`<blockquote style="border-left:4px solid #5b5ff7;margin:0 0 22px;padding:8px 14px;background:#f6f7fb;color:#30344a;">${escapeHtml(summary)}</blockquote>`);
+    blocks.push(content);
+    return blocks.join('');
   }
 
   async function fetchArticleViaCollectorApi(url) {
@@ -2023,7 +2042,7 @@
   async function fetchArticleViaTikHubDirect(url) {
     const { key, base } = saveCollectTikhubConfig(false);
     if (!key) throw new Error('未配置 TikHub API Key');
-    const endpoint = `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encodeURIComponent(url)}`;
+    const endpoint = `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_json?url=${encodeURIComponent(url)}`;
     const res = await fetch(endpoint, {
       headers: {
         Authorization: `Bearer ${key}`,
