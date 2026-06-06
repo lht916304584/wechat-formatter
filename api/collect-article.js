@@ -208,11 +208,6 @@ function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function looksLikeWrongArticle(html) {
-  const plain = String(html || '').replace(/<[^>]+>/g, '').replace(/\s+/g, '');
-  return /defconvert_bg_div_to_table|wechat-draft-publisher|publisher\.py|fix-wechat-style|match\.group\(|\{content\}/i.test(plain);
-}
-
 async function requestTikHub(endpoint, apiKey) {
   const response = await fetch(endpoint, {
     headers: {
@@ -245,9 +240,6 @@ async function requestTikHub(endpoint, apiKey) {
   if (!html) {
     const shape = payloadShape(payload);
     throw new Error(`TikHub JSON response did not contain target article content${shape ? `; shape=${shape}` : ''}`);
-  }
-  if (looksLikeWrongArticle(html)) {
-    throw new Error('TikHub returned content that does not look like the target WeChat article');
   }
   return html;
 }

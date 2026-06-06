@@ -68,11 +68,6 @@ function extractHtmlFromPayload(payload) {
   return candidates[0] ? candidates[0].html : '';
 }
 
-function looksLikeWrongArticle(html) {
-  const plain = String(html || '').replace(/<[^>]+>/g, '').replace(/\s+/g, '');
-  return /defconvert_bg_div_to_table|wechat-draft-publisher|publisher\.py|fix-wechat-style|match\.group\(|\{content\}/i.test(plain);
-}
-
 function payloadSnippet(payload, rawText) {
   const source = typeof payload === 'string' ? payload : JSON.stringify(payload || rawText || '');
   return String(source || '').replace(/\s+/g, ' ').trim().slice(0, 300);
@@ -240,9 +235,6 @@ async function requestTikHub(endpoint, apiKey) {
   if (!html) {
     const shape = payloadShape(payload);
     throw new Error(`TikHub JSON response did not contain target article content${shape ? `; shape=${shape}` : ''}`);
-  }
-  if (looksLikeWrongArticle(html)) {
-    throw new Error('TikHub returned content that does not look like the target WeChat article');
   }
   return html;
 }
