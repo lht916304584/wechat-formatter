@@ -2033,6 +2033,10 @@
         for (const key of ['html', 'content', 'text', 'paragraph', 'value', 'summary', 'title']) {
           if (typeof value[key] === 'string' && value[key].trim()) return normalizePart(value[key]);
         }
+        for (const key of ['raw_content', 'content_html', 'article_html', 'article_content', 'rich_media_content', 'full_text', 'sections']) {
+          const part = normalizePart(value[key]);
+          if (part) return part;
+        }
         return '';
       }
       const text = String(value || '').trim();
@@ -2046,10 +2050,12 @@
         .join('');
     }
 
-    const content = normalizePart(contentData.raw_content)
+    const content = normalizePart(data.content)
+      || normalizePart(contentData.raw_content)
       || normalizePart(article.full_text)
       || normalizePart(article.sections);
     if (!cleanCollectedText(stripHtmlToText(content))) return '';
+    if (looksLikeKnownWrongCollection(content)) return '';
     const title = cleanCollectedText(data.title || article.title || '');
     const author = cleanCollectedText(data.author || '');
     const publishTime = cleanCollectedText(data.datetime || '');
