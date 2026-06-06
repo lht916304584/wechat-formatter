@@ -1942,7 +1942,7 @@
       '采集文章'
     ).replace(/\s+[-_|].*$/, '').slice(0, 80);
     const root = pickArticleRoot(doc);
-    const rootHtml = cleanCollectedText(root?.innerHTML || root?.outerHTML || '');
+    const rootHtml = String(root?.innerHTML || root?.outerHTML || '').trim();
     const titleHtml = title && !/<h1[\s>]/i.test(rootHtml)
       ? `<h1 style="font-size:24px;line-height:1.4;margin:0 0 18px;font-weight:700;">${escapeHtml(title)}</h1>`
       : '';
@@ -1957,9 +1957,14 @@
   }
 
   function extractHtmlFromTikHubPayload(payload) {
+    if (typeof payload === 'string') return payload.trim();
     let data = payload && typeof payload === 'object' ? payload.data : null;
     if (data && typeof data === 'object' && data.data && typeof data.data === 'object') data = data.data;
+    if (typeof data === 'string') return data.trim();
     if (!data || typeof data !== 'object') return '';
+    for (const key of ['html', 'content_html', 'article_html', 'article_content', 'rich_media_content', 'content', 'body']) {
+      if (typeof data[key] === 'string' && data[key].trim()) return data[key].trim();
+    }
     const contentData = data.content && typeof data.content === 'object' ? data.content : {};
     const article = contentData.article && typeof contentData.article === 'object' ? contentData.article : {};
 
@@ -2042,7 +2047,7 @@
   async function fetchArticleViaTikHubDirect(url) {
     const { key, base } = saveCollectTikhubConfig(false);
     if (!key) throw new Error('未配置 TikHub API Key');
-    const endpoint = `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_json?url=${encodeURIComponent(url)}`;
+    const endpoint = `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encodeURIComponent(url)}`;
     const res = await fetch(endpoint, {
       headers: {
         Authorization: `Bearer ${key}`,

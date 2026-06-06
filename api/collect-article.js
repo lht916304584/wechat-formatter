@@ -236,10 +236,10 @@ async function requestTikHub(endpoint, apiKey) {
     error.retryable = Number(payload.code) === 400 && /request failed|please retry|请求失败|重试/i.test(`${message} ${details}`);
     throw error;
   }
-  const html = extractArticleHtmlFromJson(payload);
+  const html = extractTikHubHtml(payload);
   if (!html) {
     const shape = payloadShape(payload);
-    throw new Error(`TikHub JSON response did not contain target article content${shape ? `; shape=${shape}` : ''}`);
+    throw new Error(`TikHub HTML response did not contain target article content${shape ? `; shape=${shape}` : ''}`);
   }
   return html;
 }
@@ -268,7 +268,7 @@ async function collectArticle({ url, apiKey, baseUrl }) {
 
   const base = String(baseUrl || DEFAULT_TIKHUB_BASE).replace(/\/+$/, '');
   const encoded = encodeURIComponent(target.href);
-  const endpoint = `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_json?url=${encoded}`;
+  const endpoint = `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encoded}`;
   const html = await requestTikHubWithRetry(endpoint, apiKey, 4);
   return { ok: true, html, via: 'tikhub' };
 }
