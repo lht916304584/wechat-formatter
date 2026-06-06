@@ -2055,10 +2055,43 @@
         .join('');
     }
 
+    function collectLeaves(value, depth = 0) {
+      if (value == null || depth > 8) return [];
+      if (typeof value === 'string' || typeof value === 'number') {
+        const text = cleanCollectedText(value);
+        return text ? [text] : [];
+      }
+      if (Array.isArray(value)) return value.flatMap(item => collectLeaves(item, depth + 1));
+      if (typeof value === 'object') {
+        const skipKeys = new Set(['author', 'biz', 'cover_image', 'datetime', 'description', 'ip_location', 'ip_location_country', 'metadata', 'original', 'publish_info', 'source', 'user_id']);
+        return Object.entries(value)
+          .filter(([key]) => !skipKeys.has(key))
+          .flatMap(([, item]) => collectLeaves(item, depth + 1));
+      }
+      return [];
+    }
+
+    function buildParagraphsFromLeaves(value) {
+      return collectLeaves(value)
+        .map(text => text.trim())
+        .filter(text => text.length >= 2)
+        .filter((text, index, arr) => arr.indexOf(text) === index)
+        .join('\n\n')
+        .split(/\n{2,}/)
+        .map(part => cleanCollectedText(part))
+        .filter(Boolean)
+        .map(part => /<\/?[a-z][\s\S]*>/i.test(part) ? part : `<p>${escapeHtml(part)}</p>`)
+        .join('');
+    }
+
     const content = normalizePart(data.content)
       || normalizePart(contentData.raw_content)
       || normalizePart(article.full_text)
-      || normalizePart(article.sections);
+      || normalizePart(article.sections)
+      || buildParagraphsFromLeaves(contentData.raw_content)
+      || buildParagraphsFromLeaves(article.full_text)
+      || buildParagraphsFromLeaves(article.sections)
+      || buildParagraphsFromLeaves(data.content);
     if (!cleanCollectedText(stripHtmlToText(content))) return '';
     if (looksLikeKnownWrongCollection(content)) return '';
     const title = cleanCollectedText(data.title || article.title || '');
