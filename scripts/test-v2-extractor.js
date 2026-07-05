@@ -217,6 +217,65 @@ const sampleV2Payload = {
   }
   console.log('  PASS\n');
 
+  // Test 2d: Body nested under unknown object key — recursive scan finds it.
+  harness.calls = [];
+  const nestedBodyFetch = async (endpoint, options = {}) => {
+    harness.calls.push({ endpoint, options });
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify({
+          code: 200,
+          data: {
+            title: '嵌套正文',
+            nick_name: 'V2 嵌套字段',
+            datetime: '2025-07-01',
+            content: {
+              user_name: 'wx_id',
+              nick_name: '显示名',
+              title: '嵌套正文',
+              desc: '摘要',
+              create_time: '2025-07-01',
+              cdn_url: 'https://example.com/cdn',
+              link: 'https://example.com/link',
+              source_url: 'https://example.com/source',
+              can_share: true,
+              advertisement_info: {},
+              body: {
+                format: 'plain',
+                text: '这是嵌套在 data.content.body.text 下的正文主体，长度足够通过阈值检查，用来验证递归扫描兜底机制能在多层嵌套中找到真正的文章正文内容。\n\n第二段嵌套正文，承接上文的论述并展开细节描述。\n\n第三段给出结论。',
+              },
+            },
+          },
+        });
+      },
+    };
+  };
+
+  const result2d = await collectArticle({
+    url: 'https://mp.weixin.qq.com/s/nested-body',
+    apiKey: 'TEST_KEY',
+    baseUrl: 'https://api.tikhub.io',
+    fetchImpl: nestedBodyFetch,
+  });
+
+  console.log('Test 2d — via:', result2d.via);
+  console.log('  HTML (first 300 chars):', result2d.html.slice(0, 300));
+  if (result2d.via !== 'tikhub-v2') {
+    console.error('FAIL: expected via=tikhub-v2, got', result2d.via);
+    process.exit(1);
+  }
+  if (!result2d.html.includes('<p>这是嵌套在 data.content.body.text')) {
+    console.error('FAIL: recursive scan did not find nested body');
+    process.exit(1);
+  }
+  if (!result2d.html.includes('第二段嵌套正文')) {
+    console.error('FAIL: second paragraph missing from nested body');
+    process.exit(1);
+  }
+  console.log('  PASS\n');
+
   // Test 3: All endpoints fail → aggregated error.
   harness.calls = [];
   const failFetch = async () => ({
