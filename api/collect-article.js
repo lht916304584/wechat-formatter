@@ -96,6 +96,52 @@ function extractTikHubHtml(payload) {
   return '';
 }
 
+function extractV2ArticleHtml(payload) {
+  if (!payload || typeof payload !== 'object') return '';
+  let data = payload.data;
+  if (!data || typeof data !== 'object') return '';
+  if (data.data && typeof data.data === 'object' && !Array.isArray(data.data)) data = data.data;
+
+  const content = data.content && typeof data.content === 'object' ? data.content : {};
+
+  let html = '';
+  const htmlKeys = ['content_html', 'raw_content', 'html', 'rich_media_content', 'article_html', 'raw_html'];
+  for (const key of htmlKeys) {
+    const candidate = typeof content[key] === 'string' ? content[key] : (typeof data[key] === 'string' ? data[key] : '');
+    if (candidate.length > 80 && /<\/?[a-z][\s\S]*>/i.test(candidate)) {
+      html = candidate.trim();
+      break;
+    }
+  }
+  if (!html) {
+    const scored = extractHtmlFromPayload({ data: content }) || extractHtmlFromPayload({ data });
+    if (scored) html = scored;
+  }
+
+  if (!html) {
+    const rawText = cleanText(content.content_text || data.content_text || '');
+    if (rawText) {
+      html = rawText
+        .split(/\n{2,}|\r\n\r\n/)
+        .map(part => part.trim())
+        .filter(Boolean)
+        .map(part => `<p>${escapeHtml(part).replace(/\n/g, '<br>')}</p>`)
+        .join('');
+    }
+  }
+
+  if (!html || !cleanText(html.replace(/<[^>]+>/g, ''))) return '';
+  if (looksLikeKnownWrongCollection(html)) return '';
+
+  return buildArticleHtml({
+    title: cleanText(data.title || content.title),
+    author: cleanText(data.nick_name || data.author),
+    publishTime: cleanText(data.create_time || data.datetime),
+    digest: cleanText(data.desc || data.description || content.summary).slice(0, 180),
+    content: html,
+  });
+}
+
 function escapeHtml(value) {
   return String(value || '')
     .replace(/&/g, '&amp;')
@@ -273,13 +319,22 @@ function collectTikHubBases(primaryBase) {
   return [primary, fallback].filter(Boolean).filter((base, index, arr) => arr.indexOf(base) === index);
 }
 
-async function requestTikHub(endpoint, apiKey, mode = 'html') {
-  const response = await fetch(endpoint, {
+async function requestTikHub(endpoint, apiKey, mode = 'html', articleUrl = '') {
+  const options = {
     headers: {
       Authorization: `Bearer ${apiKey}`,
       Accept: 'application/json',
     },
-  });
+  };
+  if (mode === 'v2') {
+    options.method = 'POST';
+    options.headers['Content-Type'] = 'application/json';
+    options.body = JSON.stringify({ url: articleUrl, raw: true });
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+      options.signal = AbortSignal.timeout(30000);
+    }
+  }
+  const response = await fetch(endpoint, options);
   const text = await response.text();
   let payload = text;
   try {
@@ -301,19 +356,23 @@ async function requestTikHub(endpoint, apiKey, mode = 'html') {
     error.retryable = isRetryableTikHubError(payload.code, message, details);
     throw error;
   }
-  const html = mode === 'json' ? extractArticleHtmlFromJson(payload) : extractTikHubHtml(payload);
+  const html = mode === 'v2'
+    ? extractV2ArticleHtml(payload)
+    : (mode === 'json' ? extractArticleHtmlFromJson(payload) : extractTikHubHtml(payload));
   if (!html) {
     const shape = payloadShape(payload);
-    throw new Error(`${mode === 'json' ? 'TikHub JSON response did not contain target article content' : 'TikHub HTML response did not contain target article content'}${shape ? `; shape=${shape}` : ''}`);
+    const label = mode === 'v2' ? 'TikHub V2 response did not contain target article content'
+      : (mode === 'json' ? 'TikHub JSON response did not contain target article content' : 'TikHub HTML response did not contain target article content');
+    throw new Error(`${label}${shape ? `; shape=${shape}` : ''}`);
   }
   return html;
 }
 
-async function requestTikHubWithRetry(endpoint, apiKey, attempts, mode = 'html') {
+async function requestTikHubWithRetry(endpoint, apiKey, attempts, mode = 'html', articleUrl = '') {
   let lastError = null;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      return await requestTikHub(endpoint, apiKey, mode);
+      return await requestTikHub(endpoint, apiKey, mode, articleUrl);
     } catch (error) {
       lastError = error;
       if (!error.retryable || attempt >= attempts) break;
@@ -332,14 +391,32 @@ async function collectArticle({ url, apiKey, baseUrl }) {
   if (!apiKey) throw new Error('Missing TIKHUB_API_KEY');
 
   const encoded = encodeURIComponent(target.href);
-  const endpoints = collectTikHubBases(baseUrl).flatMap((base, index) => [
-    { url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encoded}`, via: index === 0 ? 'tikhub-html' : 'tikhub-html-alt', mode: 'html', attempts: 1 },
-    { url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_json?url=${encoded}`, via: index === 0 ? 'tikhub-json' : 'tikhub-json-alt', mode: 'json', attempts: 1 },
-  ]);
+  const bases = collectTikHubBases(baseUrl);
+  const endpoints = [];
+  bases.forEach((base, index) => {
+    endpoints.push({
+      url: `${base}/api/v1/wechat_mp/v2/fetch_article_detail`,
+      via: index === 0 ? 'tikhub-v2' : 'tikhub-v2-alt',
+      mode: 'v2',
+      attempts: 1,
+    });
+    endpoints.push({
+      url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encoded}`,
+      via: index === 0 ? 'tikhub-html' : 'tikhub-html-alt',
+      mode: 'html',
+      attempts: 1,
+    });
+    endpoints.push({
+      url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_json?url=${encoded}`,
+      via: index === 0 ? 'tikhub-json' : 'tikhub-json-alt',
+      mode: 'json',
+      attempts: 1,
+    });
+  });
   const errors = [];
   for (const endpoint of endpoints) {
     try {
-      const html = await requestTikHubWithRetry(endpoint.url, apiKey, endpoint.attempts, endpoint.mode);
+      const html = await requestTikHubWithRetry(endpoint.url, apiKey, endpoint.attempts, endpoint.mode, target.href);
       return { ok: true, html, via: endpoint.via };
     } catch (error) {
       errors.push(`${endpoint.via}: ${error.message}`);
