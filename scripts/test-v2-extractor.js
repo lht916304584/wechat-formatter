@@ -120,6 +120,103 @@ const sampleV2Payload = {
   }
   console.log('  PASS\n');
 
+  // Test 2b: V2 returns plain content_text (the documented raw=true behavior).
+  harness.calls = [];
+  const textOnlyFetch = async (endpoint, options = {}) => {
+    harness.calls.push({ endpoint, options });
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify({
+          code: 200,
+          data: {
+            title: '纯文本正文',
+            nick_name: 'V2 官方字段',
+            author: '作者',
+            create_time: '2025-07-01 09:00:00',
+            desc: '这是 content_text 路径的摘要。',
+            content: {
+              content_text: '这是第一段正文，足够长以通过长度阈值检查，验证 content_text 字段能被正确解析为段落。\n\n这是第二段正文，用来确认 \\n\\n 分段逻辑工作正常。\n\n第三段作为结尾总结。',
+            },
+          },
+        });
+      },
+    };
+  };
+
+  const result2b = await collectArticle({
+    url: 'https://mp.weixin.qq.com/s/text-only',
+    apiKey: 'TEST_KEY',
+    baseUrl: 'https://api.tikhub.io',
+    fetchImpl: textOnlyFetch,
+  });
+
+  console.log('Test 2b — via:', result2b.via);
+  console.log('  HTML (first 300 chars):', result2b.html.slice(0, 300));
+  if (result2b.via !== 'tikhub-v2') {
+    console.error('FAIL: expected via=tikhub-v2, got', result2b.via);
+    process.exit(1);
+  }
+  if (!result2b.html.includes('<p>这是第一段正文')) {
+    console.error('FAIL: content_text not parsed into paragraphs');
+    process.exit(1);
+  }
+  if (!result2b.html.includes('第二段正文')) {
+    console.error('FAIL: second paragraph missing');
+    process.exit(1);
+  }
+  console.log('  PASS\n');
+
+  // Test 2c: V2 returns body in unknown field name — scan-all-strings fallback.
+  harness.calls = [];
+  const unknownFieldFetch = async (endpoint, options = {}) => {
+    harness.calls.push({ endpoint, options });
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify({
+          code: 200,
+          data: {
+            title: '字段名漂移',
+            nick_name: 'TikHub V2',
+            user_name: 'wx_nickname',
+            datetime: '2025-07-01',
+            content: {
+              user_name: 'wx_nickname',
+              desc: '摘要',
+              body_text: '正文主体段落一，长度超过 50 字符阈值，用来验证未知字段名扫描兜底机制能从 content 子对象里挑出最长的纯文本字段作为正文使用。\n\n正文主体段落二，承接上文的论述并展开细节，确保多段结构正常处理。\n\n正文主体段落三，给出结论与展望。',
+            },
+          },
+        });
+      },
+    };
+  };
+
+  const result2c = await collectArticle({
+    url: 'https://mp.weixin.qq.com/s/unknown-field',
+    apiKey: 'TEST_KEY',
+    baseUrl: 'https://api.tikhub.io',
+    fetchImpl: unknownFieldFetch,
+  });
+
+  console.log('Test 2c — via:', result2c.via);
+  console.log('  HTML (first 300 chars):', result2c.html.slice(0, 300));
+  if (result2c.via !== 'tikhub-v2') {
+    console.error('FAIL: expected via=tikhub-v2, got', result2c.via);
+    process.exit(1);
+  }
+  if (!result2c.html.includes('<p>正文主体段落一')) {
+    console.error('FAIL: scan-all-strings fallback did not pick up body_text');
+    process.exit(1);
+  }
+  if (!result2c.html.includes('正文主体段落二')) {
+    console.error('FAIL: second paragraph missing from scan fallback');
+    process.exit(1);
+  }
+  console.log('  PASS\n');
+
   // Test 3: All endpoints fail → aggregated error.
   harness.calls = [];
   const failFetch = async () => ({

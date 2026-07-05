@@ -89,7 +89,7 @@ function payloadShape(payload) {
       if (value && typeof value === 'object') queue.push({ item: value, path: `${path}.${key}` });
     }
   }
-  return parts.join(' | ').slice(0, 220);
+  return parts.join(' | ').slice(0, 600);
 }
 
 function wait(ms) {
@@ -266,6 +266,37 @@ function extractTikHubHtml(payload) {
   return '';
 }
 
+const V2_METADATA_KEYS = new Set([
+  'user_name', 'nick_name', 'author', 'title',
+  'desc', 'description', 'digest', 'summary',
+  'datetime', 'create_time', 'ori_create_time', 'last_modify_time', 'lastModifyTime',
+  'cdn_url', 'url', 'cover', 'cover_url', 'cover_image',
+  'comment_id', 'msg_id', 'msgId', 'biz_uin', 'bizUin',
+  'item_id', 'itemId', 'itemIdx', 'album_id',
+]);
+
+function plainTextToParagraphHtml(text) {
+  return text
+    .split(/\n{2,}|\r\n\r\n/)
+    .map(part => part.trim())
+    .filter(Boolean)
+    .map(part => `<p>${escapeHtml(part).replace(/\n/g, '<br>')}</p>`)
+    .join('');
+}
+
+function pickLongestPlainText(root) {
+  if (!root || typeof root !== 'object') return '';
+  let best = '';
+  for (const value of Object.values(root)) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed.length < 50) continue;
+    if (/<\/?[a-z][\s\S]*>/i.test(trimmed)) continue;
+    if (trimmed.length > best.length) best = trimmed;
+  }
+  return best;
+}
+
 function extractV2ArticleHtml(payload) {
   if (!payload || typeof payload !== 'object') return '';
   let data = payload.data;
@@ -290,14 +321,26 @@ function extractV2ArticleHtml(payload) {
 
   if (!html) {
     const rawText = cleanText(content.content_text || data.content_text || '');
-    if (rawText) {
-      html = rawText
-        .split(/\n{2,}|\r\n\r\n/)
-        .map(part => part.trim())
-        .filter(Boolean)
-        .map(part => `<p>${escapeHtml(part).replace(/\n/g, '<br>')}</p>`)
-        .join('');
+    if (rawText) html = plainTextToParagraphHtml(rawText);
+  }
+
+  // V2 field names diverge from docs — scan for longest plain-text string under content/data,
+  // skipping known metadata fields. Picks up body text even when field name is unexpected.
+  if (!html) {
+    const contentFiltered = {};
+    for (const [key, value] of Object.entries(content)) {
+      if (!V2_METADATA_KEYS.has(key)) contentFiltered[key] = value;
     }
+    let rawText = pickLongestPlainText(contentFiltered);
+    if (!rawText) {
+      const dataFiltered = {};
+      for (const [key, value] of Object.entries(data)) {
+        if (key === 'content') continue;
+        if (!V2_METADATA_KEYS.has(key)) dataFiltered[key] = value;
+      }
+      rawText = pickLongestPlainText(dataFiltered);
+    }
+    if (rawText) html = plainTextToParagraphHtml(rawText);
   }
 
   if (!html || !cleanText(html.replace(/<[^>]+>/g, ''))) return '';
@@ -305,9 +348,9 @@ function extractV2ArticleHtml(payload) {
 
   return buildArticleHtml({
     title: cleanText(data.title || content.title),
-    author: cleanText(data.nick_name || data.author),
-    publishTime: cleanText(data.create_time || data.datetime),
-    digest: cleanText(data.desc || data.description || content.summary).slice(0, 180),
+    author: cleanText(data.nick_name || data.author || content.user_name || content.nick_name),
+    publishTime: cleanText(data.create_time || data.datetime || content.create_time || content.datetime),
+    digest: cleanText(data.desc || data.description || content.desc || content.description || content.summary).slice(0, 180),
     content: html,
   });
 }
