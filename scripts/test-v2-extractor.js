@@ -573,6 +573,68 @@ const sampleV2Payload = {
   }
   console.log('  PASS\n');
 
+  // Test 2j: Image uses alternate lazy-load attribute names (data-imgsrc, data-lazy-src,
+  // data-original-src) and various placeholder src forms. Verify all variants get swapped.
+  // Also verify imageStats is returned.
+  harness.calls = [];
+  const altAttrFetch = async (endpoint, options = {}) => {
+    harness.calls.push({ endpoint, options });
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify({
+          code: 200,
+          data: {
+            title: '多变种懒加载',
+            nick_name: '测试号',
+            content: {
+              content_noencode: '<p>第一段正文，包含足够文字以通过长度检查阈值，用来承载图片变种的测试。</p><p><img class="i1" data-imgsrc="https://mmbiz.qpic.cn/mmbiz_jpg/aaa/640?wx_fmt=jpeg" src="data:image/png;base64,iVBORw0KGgoAAAANS"></p><p>第二段正文作为间隔。</p><p><img class="i2" data-lazy-src="https://mmbiz.qpic.cn/mmbiz_png/bbb/640?wx_fmt=png"></p><p>第三段正文。</p><p><img class="i3" data-original-src="https://mmbiz.qpic.cn/mmbiz_gif/ccc/640?wx_fmt=gif" src="about:blank"></p><p>第四段作为结尾总结整篇文章结构。</p>',
+              desc: '多变种',
+              create_time: '2025-07-01',
+            },
+          },
+        });
+      },
+    };
+  };
+
+  const result2j = await collectArticle({
+    url: 'https://mp.weixin.qq.com/s/alt-attr',
+    apiKey: 'TEST_KEY',
+    baseUrl: 'https://api.tikhub.io',
+    fetchImpl: altAttrFetch,
+  });
+
+  console.log('Test 2j — via:', result2j.via);
+  console.log('  imageStats:', JSON.stringify(result2j.imageStats));
+  console.log('  HTML:', result2j.html);
+  if (result2j.via !== 'tikhub-v2') {
+    console.error('FAIL: expected via=tikhub-v2, got', result2j.via);
+    process.exit(1);
+  }
+  if (!/(?<!data-)src="https:\/\/mmbiz\.qpic\.cn\/mmbiz_jpg\/aaa\/640\?wx_fmt=jpeg"/.test(result2j.html)) {
+    console.error('FAIL: data-imgsrc not swapped into src');
+    process.exit(1);
+  }
+  if (!/(?<!data-)src="https:\/\/mmbiz\.qpic\.cn\/mmbiz_png\/bbb\/640\?wx_fmt=png"/.test(result2j.html)) {
+    console.error('FAIL: data-lazy-src not swapped into src');
+    process.exit(1);
+  }
+  if (!/(?<!data-)src="https:\/\/mmbiz\.qpic\.cn\/mmbiz_gif\/ccc\/640\?wx_fmt=gif"/.test(result2j.html)) {
+    console.error('FAIL: data-original-src not swapped into src');
+    process.exit(1);
+  }
+  if (result2j.html.includes('src="data:image/png;base64')) {
+    console.error('FAIL: PNG placeholder src should have been replaced');
+    process.exit(1);
+  }
+  if (!result2j.imageStats || result2j.imageStats.imgCount !== 3 || result2j.imageStats.withRealSrc !== 3) {
+    console.error('FAIL: imageStats incorrect:', result2j.imageStats);
+    process.exit(1);
+  }
+  console.log('  PASS\n');
+
   // Test 3: All endpoints fail → aggregated error.
   harness.calls = [];
   const failFetch = async () => ({

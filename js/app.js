@@ -1937,8 +1937,21 @@
     const doc = new DOMParser().parseFromString(html, 'text/html');
     doc.querySelectorAll('script,noscript,iframe,svg,canvas,form,input,button,textarea,select,option,meta,link,base').forEach(el => el.remove());
     doc.querySelectorAll('img').forEach(img => {
-      const src = absolutizeUrl(img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-original') || '', sourceUrl);
+      const currentSrc = img.getAttribute('src') || '';
+      const isPlaceholderSrc = !currentSrc || /^data:/i.test(currentSrc) || currentSrc.length < 60;
+      const realSrc = isPlaceholderSrc
+        ? (img.getAttribute('data-src') || img.getAttribute('data-original') || img.getAttribute('data-imgsrc') || img.getAttribute('data-lazy-src') || img.getAttribute('data-original-src') || img.getAttribute('data-src-original') || '')
+        : currentSrc;
+      const src = absolutizeUrl(realSrc, sourceUrl);
       if (src) img.setAttribute('src', src);
+    });
+    doc.querySelectorAll('[style*="background-image"]').forEach(el => {
+      const style = el.getAttribute('style') || '';
+      const dataBg = el.getAttribute('data-bg') || el.getAttribute('data-background') || '';
+      if (dataBg && /url\(\s*(?:['"]|&quot;)?data:/i.test(style)) {
+        const url = dataBg.replace(/^['"]|['"]$/g, '');
+        el.setAttribute('style', style.replace(/background-image\s*:\s*url\([^)]*\)/gi, `background-image: url('${url}')`));
+      }
     });
     doc.querySelectorAll('a').forEach(link => {
       const href = absolutizeUrl(link.getAttribute('href') || '', sourceUrl);
@@ -2143,6 +2156,9 @@
       if (res.ok && payload.ok !== false) {
         const html = payload.html || extractHtmlFromTikHubPayload(payload);
         if (!html) throw new Error('服务端未返回可解析的文章 HTML');
+        if (payload.imageStats) {
+          console.log('[采集] imageStats:', payload.imageStats);
+        }
         return { html, via: payload.via || 'tikhub' };
       }
       const fallback = responseText && !responseText.trim().startsWith('<') ? responseText.slice(0, 180) : '';

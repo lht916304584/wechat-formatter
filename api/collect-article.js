@@ -335,19 +335,37 @@ function buildParagraphHtmlFromLeaves(value) {
 function fixLazyLoadedImages(html) {
   if (typeof html !== 'string' || !/<img\b/i.test(html)) return html;
   return html.replace(/<img\b([^>]+)>/gi, (match, attrs) => {
-    const dataSrcMatch = attrs.match(/\bdata-(?:src|original)="([^"]+)"/i);
+    const dataSrcMatch = attrs.match(/\bdata-(?:src|original|imgsrc|lazy-src|original-src|src-original)="([^"]+)"/i);
     if (!dataSrcMatch) return match;
     const dataSrc = dataSrcMatch[1];
     const srcMatch = attrs.match(/(^|\s)src="([^"]*)"/i);
     if (srcMatch) {
       const src = srcMatch[2];
-      if (src.length > 60 && !/^data:image\/(gif|svg)\+xml/i.test(src)) return match;
+      if (src.length > 60 && !/^data:/i.test(src)) return match;
     }
     const newAttrs = srcMatch
       ? attrs.replace(/(^|\s)src="[^"]*"/i, `$1src="${dataSrc}"`)
       : ` src="${dataSrc}"${attrs}`;
     return `<img${newAttrs}>`;
   });
+}
+
+function computeImageStats(html) {
+  if (typeof html !== 'string' || !html) return null;
+  const imgCount = (html.match(/<img\b/gi) || []).length;
+  if (imgCount === 0) return { imgCount: 0, withRealSrc: 0, withDataSrcOnly: 0, bgImageCount: 0, sampleSrc: '' };
+  const realSrcRe = /(^|\s)src="(https?:[^"]+)"/gi;
+  let withRealSrc = 0;
+  let sampleSrc = '';
+  let m;
+  while ((m = realSrcRe.exec(html)) !== null) {
+    withRealSrc += 1;
+    if (!sampleSrc) sampleSrc = m[2].slice(0, 120);
+  }
+  const dataSrcOnlyRe = /<img\b(?![^>]*\ssrc="https?:)[^>]*\bdata-(?:src|original|imgsrc|lazy-src|original-src|src-original)="https?:[^"]+"/i;
+  const withDataSrcOnly = dataSrcOnlyRe.test(html) ? 1 : 0;
+  const bgImageCount = (html.match(/background-image\s*:\s*url\(/gi) || []).length;
+  return { imgCount, withRealSrc, withDataSrcOnly, bgImageCount, sampleSrc };
 }
 
 function buildArticleHtml(candidate) {
@@ -533,7 +551,7 @@ async function collectArticle({ url, apiKey, baseUrl }) {
   for (const endpoint of endpoints) {
     try {
       const html = await requestTikHubWithRetry(endpoint.url, apiKey, endpoint.attempts, endpoint.mode, target.href);
-      return { ok: true, html, via: endpoint.via };
+      return { ok: true, html, via: endpoint.via, imageStats: computeImageStats(html) };
     } catch (error) {
       errors.push(`${endpoint.via}: ${error.message}`);
     }
