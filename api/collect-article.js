@@ -145,27 +145,39 @@ function extractV2ArticleHtml(payload) {
   const content = data.content && typeof data.content === 'object' ? data.content : {};
 
   let html = '';
-  const htmlKeys = ['content_html', 'raw_content', 'html', 'rich_media_content', 'article_html', 'raw_html'];
+
+  // Validate each candidate inline so a low-quality HTML string from one fallback
+  // doesn't block subsequent fallbacks from running.
+  const acceptHtml = (candidate) => {
+    if (!candidate || typeof candidate !== 'string') return false;
+    const trimmed = candidate.trim();
+    if (trimmed.length <= 80) return false;
+    if (!/<\/?[a-z][\s\S]*>/i.test(trimmed)) return false;
+    if (!cleanText(trimmed.replace(/<[^>]+>/g, ''))) return false;
+    if (looksLikeKnownWrongCollection(trimmed)) return false;
+    html = trimmed;
+    return true;
+  };
+
+  // Step 1: known HTML field names. content_noencode is the actual V2 body field observed in production.
+  const htmlKeys = ['content_noencode', 'content_html', 'raw_content', 'html', 'rich_media_content', 'article_html', 'raw_html'];
   for (const key of htmlKeys) {
-    const candidate = typeof content[key] === 'string' ? content[key] : (typeof data[key] === 'string' ? data[key] : '');
-    if (candidate.length > 80 && /<\/?[a-z][\s\S]*>/i.test(candidate)) {
-      html = candidate.trim();
-      break;
-    }
-  }
-  if (!html) {
-    const scored = extractHtmlFromPayload({ data: content }) || extractHtmlFromPayload({ data });
-    if (scored) html = scored;
+    if (acceptHtml(content[key]) || acceptHtml(data[key])) break;
   }
 
+  // Step 2: score-based HTML extraction across all nested strings.
+  if (!html) {
+    const scored = extractHtmlFromPayload({ data: content }) || extractHtmlFromPayload({ data });
+    if (scored) acceptHtml(scored);
+  }
+
+  // Step 3: documented plain-text field.
   if (!html) {
     const rawText = cleanText(content.content_text || data.content_text || '');
     if (rawText) html = plainTextToParagraphHtml(rawText);
   }
 
-  // V2 field names diverge from docs — recursively scan content (then data) for the longest
-  // plain-text string, skipping known metadata fields. Picks up body text even when nested
-  // under unknown object keys (e.g., data.content.body.text).
+  // Step 4: recursive scan for longest plain text under unknown field names.
   if (!html) {
     let rawText = pickLongestPlainText(content);
     if (!rawText) {

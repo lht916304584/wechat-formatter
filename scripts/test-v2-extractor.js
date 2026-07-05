@@ -276,6 +276,107 @@ const sampleV2Payload = {
   }
   console.log('  PASS\n');
 
+  // Test 2e: V2 returns article body in `content_noencode` (the actual production field).
+  // Replicates the real response shape — content has 100+ metadata keys plus content_noencode.
+  harness.calls = [];
+  const productionLikeFetch = async (endpoint, options = {}) => {
+    harness.calls.push({ endpoint, options });
+    if (endpoint.includes('//api.tikhub.dev/')) {
+      // Alt base returns no body — should not be reached because primary succeeds.
+      return {
+        ok: true,
+        status: 200,
+        async text() {
+          return JSON.stringify({
+            code: 200,
+            data: {
+              itemIdx: 1,
+              content: {
+                user_name: 'wx_id',
+                nick_name: '公众号名',
+                title: '生产响应',
+                desc: '摘要',
+                create_time: '2025-07-01',
+                cdn_url: 'https://example.com/cdn',
+                link: 'https://example.com/link',
+                source_url: 'https://example.com/source',
+                can_share: true,
+                advertisement_info: {},
+              },
+            },
+          });
+        },
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify({
+          code: 200,
+          data: {
+            noNeedUpdate: false,
+            itemIdx: 1,
+            clientCacheTime: 1234567890,
+            tmplVersions: { 0: { version: '1' } },
+            pbRequestMsgInfo: {},
+            itemPictureUrls: {},
+            bizUin: 'biz',
+            url: 'https://mp.weixin.qq.com/s/abc',
+            forceUrl: '',
+            content: {
+              user_name: 'wx_id',
+              nick_name: '公众号名',
+              round_head_img: 'https://example.com/avatar.png',
+              title: '生产响应标题',
+              desc: '这是来自 TikHub V2 生产接口的摘要。',
+              content_noencode: '<p style="text-align:center;"><strong>第一段正文</strong>，包含足够的文字长度以满足 80 字符阈值检查，验证 content_noencode 字段能被正确识别为正文 HTML。</p><p>第二段落，包含一些细节和列表项。</p><p>第三段落作为总结，整体超过阈值。</p>',
+              create_time: '2025-07-01 10:00:00',
+              cdn_url: 'https://example.com/cdn',
+              link: 'https://example.com/link',
+              source_url: 'https://example.com/source',
+              can_share: true,
+              alias: 'alias',
+              type: 'type',
+              author: '作者',
+              advertisement_info: {},
+              ori_create_time: 1234567890,
+              copyright_info: {},
+            },
+          },
+        });
+      },
+    };
+  };
+
+  const result2e = await collectArticle({
+    url: 'https://mp.weixin.qq.com/s/production',
+    apiKey: 'TEST_KEY',
+    baseUrl: 'https://api.tikhub.io',
+    fetchImpl: productionLikeFetch,
+  });
+
+  console.log('Test 2e — via:', result2e.via);
+  console.log('  HTML (first 300 chars):', result2e.html.slice(0, 300));
+  if (result2e.via !== 'tikhub-v2') {
+    console.error('FAIL: expected via=tikhub-v2 (primary should succeed), got', result2e.via);
+    process.exit(1);
+  }
+  if (!result2e.html.includes('<strong>第一段正文</strong>')) {
+    console.error('FAIL: content_noencode body not preserved');
+    process.exit(1);
+  }
+  if (!result2e.html.includes('第二段落')) {
+    console.error('FAIL: second paragraph missing');
+    process.exit(1);
+  }
+  // Verify alt base was NOT called (primary should have succeeded).
+  if (harness.calls.length !== 1) {
+    console.error('FAIL: alt base should not be tried when primary succeeds, calls=', harness.calls.length);
+    process.exit(1);
+  }
+  console.log('  PASS\n');
+
   // Test 3: All endpoints fail → aggregated error.
   harness.calls = [];
   const failFetch = async () => ({
