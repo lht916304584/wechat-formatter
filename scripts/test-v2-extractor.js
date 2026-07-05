@@ -460,6 +460,55 @@ const sampleV2Payload = {
   }
   console.log('  PASS\n');
 
+  // Test 2h: Article body legitimately mentions "wechat-draft-publisher" / "SKILL.md" (e.g.,
+  // an article about WeChat publishing workflows). must NOT be rejected by looksLikeKnownWrongCollection.
+  harness.calls = [];
+  const workflowArticleFetch = async (endpoint, options = {}) => {
+    harness.calls.push({ endpoint, options });
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify({
+          code: 200,
+          data: {
+            title: '微信公众号排版工作流',
+            nick_name: '排版研究',
+            content: {
+              user_name: 'wx_id',
+              content_noencode: '<section data-tool="markdown编辑器" data-website="https://markdown.com.cn/editor"><p>这篇文章介绍我使用的排版工作流，其中会提到 <code>wechat-draft-publisher</code> 这个工具，以及 <code>fix-wechat-style.py</code> 脚本，还有 <code>SKILL.md</code> 配置文件的写法。</p><p>第二段落展开讲 <code>publisher.py</code> 的命令行参数，以及 <code>defconvert_bg_div_to_table</code> 这个内部函数的作用。</p><p>第三段总结整篇文章，强调工作流的整体设计思路。</p></section>',
+              desc: '介绍微信排版工作流',
+              create_time: '2025-07-01',
+            },
+          },
+        });
+      },
+    };
+  };
+
+  const result2h = await collectArticle({
+    url: 'https://mp.weixin.qq.com/s/workflow-article',
+    apiKey: 'TEST_KEY',
+    baseUrl: 'https://api.tikhub.io',
+    fetchImpl: workflowArticleFetch,
+  });
+
+  console.log('Test 2h — via:', result2h.via);
+  console.log('  HTML (first 300 chars):', result2h.html.slice(0, 300));
+  if (result2h.via !== 'tikhub-v2') {
+    console.error('FAIL: expected via=tikhub-v2, got', result2h.via);
+    process.exit(1);
+  }
+  if (!result2h.html.includes('wechat-draft-publisher')) {
+    console.error('FAIL: article body rejected because it mentions wechat-draft-publisher');
+    process.exit(1);
+  }
+  if (!result2h.html.includes('SKILL.md')) {
+    console.error('FAIL: article body rejected because it mentions SKILL.md');
+    process.exit(1);
+  }
+  console.log('  PASS\n');
+
   // Test 3: All endpoints fail → aggregated error.
   harness.calls = [];
   const failFetch = async () => ({

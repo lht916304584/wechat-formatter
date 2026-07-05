@@ -141,11 +141,11 @@ function extractContentNoencode(value) {
 
   if (/<\/?[a-z][\s\S]*>/i.test(text)) {
     const plain = cleanText(text.replace(/<[^>]+>/g, ''));
-    if (plain && !looksLikeKnownWrongCollection(text)) return text;
+    if (plain) return text;
   }
 
   const plain = cleanText(text.replace(/<[^>]+>/g, ''));
-  if (plain && !looksLikeKnownWrongCollection(text)) return plainTextToParagraphHtml(text);
+  if (plain) return plainTextToParagraphHtml(text);
   return '';
 }
 
@@ -185,7 +185,6 @@ function extractV2ArticleHtml(payload) {
     if (trimmed.length <= 80) return false;
     if (!/<\/?[a-z][\s\S]*>/i.test(trimmed)) return false;
     if (!cleanText(trimmed.replace(/<[^>]+>/g, ''))) return false;
-    if (looksLikeKnownWrongCollection(trimmed)) return false;
     html = trimmed;
     return true;
   };
@@ -229,7 +228,6 @@ function extractV2ArticleHtml(payload) {
   }
 
   if (!html || !cleanText(html.replace(/<[^>]+>/g, ''))) return '';
-  if (looksLikeKnownWrongCollection(html)) return '';
 
   return buildArticleHtml({
     title: cleanText(data.title || content.title),
