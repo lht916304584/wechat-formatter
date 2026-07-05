@@ -1,4 +1,4 @@
-const CACHE_NAME = 'zgedit-static-v12';
+const CACHE_NAME = 'zgedit-static-v13';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -58,7 +58,7 @@ self.addEventListener('fetch', event => {
 
   if (url.origin === location.origin && NETWORK_FIRST_ASSETS.has(url.pathname)) {
     event.respondWith(
-      fetch(request)
+      fetch(request, { cache: 'no-cache' })
         .then(response => {
           if (response && response.ok) {
             const copy = response.clone();
