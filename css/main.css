@@ -1580,6 +1580,39 @@ textarea:focus-visible {
   border-radius: var(--radius);
   background: var(--surface-dark);
 }
+.collect-optin {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.collect-optin input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.collect-cost-hint {
+  font-style: normal;
+  color: var(--text-tertiary);
+}
+.btn-video-download {
+  margin: 6px 0 14px;
+  padding: 5px 12px;
+  border: 1px solid var(--primary);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.btn-video-download:hover {
+  background: var(--primary);
+  color: #fff;
+}
 .collect-service-head {
   display: flex;
   justify-content: space-between;

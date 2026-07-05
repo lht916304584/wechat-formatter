@@ -1,4 +1,4 @@
-const CACHE_NAME = 'zgedit-static-v13';
+const CACHE_NAME = 'zgedit-static-v14';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -8,6 +8,8 @@ const CORE_ASSETS = [
   './js/themes.js',
   './js/wechat-renderer.js',
   './js/app.js',
+  './js/channels-decoder.js',
+  './js/vendor/wasm_video_decode.js',
   './assets/zgedit-icon.svg',
   './assets/zgedit-workbench.png'
 ];
@@ -19,6 +21,8 @@ const NETWORK_FIRST_ASSETS = new Set([
   '/js/themes.js',
   '/js/wechat-renderer.js',
   '/js/app.js',
+  '/js/channels-decoder.js',
+  '/js/vendor/wasm_video_decode.js',
   '/manifest.webmanifest',
 ]);
 

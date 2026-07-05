@@ -30,6 +30,7 @@ function isSafeUrl(value, attr) {
   if (!raw) return true;
   if (/^(#|\/(?!\/)|\.{0,2}\/)/.test(raw)) return true;
   if (/^https?:\/\//i.test(raw)) return true;
+  if ((attr === 'src') && /^blob:/i.test(raw)) return true;
   if ((attr === 'href') && /^(mailto|tel):/i.test(raw)) return true;
   if ((attr === 'src') && /^data:image\/(png|jpe?g|gif|webp);base64,/i.test(raw)) return true;
   return false;
@@ -38,12 +39,15 @@ function isSafeUrl(value, attr) {
 function sanitizeHtmlInput(content) {
   const template = document.createElement('template');
   template.innerHTML = String(content || '');
-  const dangerousTags = new Set(['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button', 'textarea', 'select', 'option', 'meta', 'link', 'base']);
-  const allowedTags = new Set(['a', 'abbr', 'b', 'blockquote', 'br', 'code', 'del', 'div', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'li', 'ol', 'p', 'pre', 'section', 'span', 'strong', 'sub', 'sup', 'table', 'tbody', 'td', 'th', 'thead', 'tr', 'ul']);
+  const dangerousTags = new Set(['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'textarea', 'select', 'option', 'meta', 'link', 'base']);
+  const allowedTags = new Set(['a', 'abbr', 'b', 'blockquote', 'br', 'button', 'code', 'del', 'div', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'li', 'ol', 'p', 'pre', 'section', 'source', 'span', 'strong', 'sub', 'sup', 'table', 'tbody', 'td', 'th', 'thead', 'tr', 'ul', 'video']);
   const globalAttrs = new Set(['title', 'style', 'align']);
   const attrAllowList = {
     a: new Set(['href', 'title']),
+    button: new Set(['type', 'class', 'data-video-id']),
     img: new Set(['src', 'alt', 'title', 'width', 'height']),
+    video: new Set(['src', 'poster', 'controls', 'width', 'height', 'preload', 'data-videosnap-id']),
+    source: new Set(['src', 'type']),
     td: new Set(['colspan', 'rowspan']),
     th: new Set(['colspan', 'rowspan']),
     table: new Set(['width']),
@@ -64,7 +68,11 @@ function sanitizeHtmlInput(content) {
       [...child.attributes].forEach(attr => {
         const name = attr.name.toLowerCase();
         const allowedForTag = attrAllowList[tag] && attrAllowList[tag].has(name);
-        if (name.startsWith('on') || name === 'srcdoc' || name === 'id' || name === 'class') {
+        if (name.startsWith('on') || name === 'srcdoc' || name === 'id') {
+          child.removeAttribute(attr.name);
+          return;
+        }
+        if (name === 'class' && !(tag === 'button' && attr.value === 'btn-video-download')) {
           child.removeAttribute(attr.name);
           return;
         }

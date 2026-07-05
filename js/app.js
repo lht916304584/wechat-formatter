@@ -26,6 +26,8 @@
   let collectTikhubKey = document.getElementById('collectTikhubKey');
   let collectTikhubBase = document.getElementById('collectTikhubBase');
   let btnSaveCollectTikhub = document.getElementById('btnSaveCollectTikhub');
+  let collectIncludeVideos = document.getElementById('collectIncludeVideos');
+  let collectVideoCostHint = document.getElementById('collectVideoCostHint');
   const historyCompareModal = document.getElementById('historyCompareModal');
   const historyCompareBody = document.getElementById('historyCompareBody');
   const btnCloseHistoryCompare = document.getElementById('btnCloseHistoryCompare');
@@ -1111,6 +1113,7 @@
       annotatePreviewHeadings();
       highlightOutline();
       addCodeCopyButtons();
+      attachVideoDownloadHandlers(preview, pendingCollectedBlobs);
       // Render Mermaid diagrams asynchronously
       if (typeof renderMermaidDiagrams === 'function') renderMermaidDiagrams();
     } catch (e) {
@@ -1652,6 +1655,8 @@
     collectTikhubKey = document.getElementById('collectTikhubKey');
     collectTikhubBase = document.getElementById('collectTikhubBase');
     btnSaveCollectTikhub = document.getElementById('btnSaveCollectTikhub');
+    collectIncludeVideos = document.getElementById('collectIncludeVideos');
+    collectVideoCostHint = document.getElementById('collectVideoCostHint');
     return collectArticleModal;
   }
 
@@ -1676,6 +1681,10 @@
               <button id="btnFetchArticle" class="btn btn-primary btn-small">采集</button>
             </div>
           </div>
+          <label class="collect-optin">
+            <input type="checkbox" id="collectIncludeVideos">
+            <span>同时采集视频号视频 <em id="collectVideoCostHint" class="collect-cost-hint">约 $0.01/作者账号</em></span>
+          </label>
           <div class="collect-service-box">
             <div class="collect-service-head">
               <strong>TikHub 公众号采集</strong>
@@ -2129,13 +2138,15 @@
     return blocks.join('');
   }
 
-  async function fetchArticleViaCollectorApi(url) {
+  async function fetchArticleViaCollectorApi(url, options = {}) {
     if (location.protocol === 'file:') throw new Error('本地 file 模式没有服务端采集接口');
     const { key, base } = saveCollectTikhubConfig(false);
+    const wantVideos = options.wantVideos === true;
     const body = JSON.stringify({
       url,
       apiKey: key || undefined,
       baseUrl: base || undefined,
+      wantVideos,
     });
     const errors = [];
     for (const endpoint of COLLECT_API_FALLBACKS) {
@@ -2159,7 +2170,13 @@
         if (payload.imageStats) {
           console.log('[采集] imageStats:', payload.imageStats);
         }
-        return { html, via: payload.via || 'tikhub' };
+        const result = { html, via: payload.via || 'tikhub' };
+        if (wantVideos) {
+          result.videos = Array.isArray(payload.videos) ? payload.videos : [];
+          result.unmatched = Array.isArray(payload.unmatched) ? payload.unmatched : [];
+          result.videoEnumerateErrors = Array.isArray(payload.videoEnumerateErrors) ? payload.videoEnumerateErrors : [];
+        }
+        return result;
       }
       const fallback = responseText && !responseText.trim().startsWith('<') ? responseText.slice(0, 180) : '';
       errors.push(`${endpoint}: ${payload.error || fallback || `HTTP ${res.status}`}`);
@@ -2202,11 +2219,11 @@
     throw new Error(errors.join('；') || 'TikHub 未返回可解析的文章 HTML');
   }
 
-  async function fetchArticleHtml(url) {
+  async function fetchArticleHtml(url, options = {}) {
     const errors = [];
     if (isWechatArticleUrl(url)) {
       try {
-        return await fetchArticleViaCollectorApi(url);
+        return await fetchArticleViaCollectorApi(url, options);
       } catch (err) {
         errors.push(`服务端采集失败：${err.message}`);
       }
@@ -2237,6 +2254,155 @@
     }
   }
 
+  const VIDEOSNAP_STORAGE_PREFIX = 'wechat-formatter:videosnaps:';
+  const VIDEOSNAP_TTL_MS = 50 * 60 * 1000;
+  let pendingCollectedBlobs = [];
+  let pendingCollectedArticleUrl = '';
+
+  function loadVideosnapMetaMap() {
+    try {
+      const raw = localStorage.getItem(VIDEOSNAP_STORAGE_PREFIX + 'meta');
+      return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+  }
+
+  function saveVideosnapMetaMap(map) {
+    try {
+      localStorage.setItem(VIDEOSNAP_STORAGE_PREFIX + 'meta', JSON.stringify(map));
+    } catch {}
+  }
+
+  function storeVideosnaps(articleUrl, videos) {
+    if (!Array.isArray(videos) || !videos.length) return;
+    const map = loadVideosnapMetaMap();
+    videos.forEach((v) => {
+      map[v.id] = {
+        id: v.id,
+        desc: v.desc,
+        fullUrl: v.fullUrl,
+        decodeKey: v.decodeKey,
+        poster: v.poster,
+        articleUrl,
+        fetchedAt: Date.now(),
+      };
+    });
+    saveVideosnapMetaMap(map);
+  }
+
+  function fetchWithTimeout(url, ms = 60000) {
+    if (typeof AbortController !== 'undefined') {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), ms);
+      return fetch(url, { signal: ctrl.signal }).finally(() => clearTimeout(timer));
+    }
+    return fetch(url);
+  }
+
+  async function decryptAndInjectVideosnaps(html, videos, articleUrl, statusSink) {
+    if (!videos || videos.length === 0) return { html, blobs: [], failures: [] };
+    if (!window.ChannelsDecoder || typeof window.ChannelsDecoder.decryptChannelsMp4 !== 'function') {
+      throw new Error('视频解密模块未加载（请检查 js/channels-decoder.js 是否引入）');
+    }
+    await window.ChannelsDecoder.ensureModule();
+    const blobs = [];
+    const failures = [];
+    let workingHtml = html;
+    for (const video of videos) {
+      try {
+        if (statusSink) statusSink(`正在解密视频：${video.desc || video.title || ''}（${video.duration || ''}秒）`);
+        const response = await fetchWithTimeout(video.fullUrl);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const encrypted = new Uint8Array(await response.arrayBuffer());
+        const decrypted = await window.ChannelsDecoder.decryptChannelsMp4(encrypted, video.decodeKey);
+        const blob = new Blob([decrypted], { type: 'video/mp4' });
+        const blobUrl = URL.createObjectURL(blob);
+        blobs.push({ id: video.id, blobUrl, blob, desc: video.desc || video.title || '视频' });
+        workingHtml = workingHtml.replace(
+          new RegExp(`<video\\b[^>]*data-videosnap-id="${video.id}"[^>]*>`, 'g'),
+          `<video data-videosnap-id="${video.id}" src="${blobUrl}" poster="${(video.poster || '').replace(/"/g, '&quot;')}" controls preload="metadata" style="max-width:100%;"></video><button type="button" class="btn-video-download" data-video-id="${video.id}">下载 MP4</button>`,
+        );
+      } catch (err) {
+        failures.push({ id: video.id, desc: video.desc || video.title || '', error: err.message });
+        workingHtml = workingHtml.replace(
+          new RegExp(`<video\\b[^>]*data-videosnap-id="${video.id}"[^>]*>`, 'g'),
+          `<p style="padding:12px;background:#fff1f0;border:1px solid #ffa39e;border-radius:4px;color:#a8071a;">[视频解密失败] ${escapeHtml(video.desc || '')}（${err.message}）</p>`,
+        );
+      }
+    }
+    storeVideosnaps(articleUrl, videos);
+    return { html: workingHtml, blobs, failures };
+  }
+
+  async function restoreVideosnapsOnLoad() {
+    if (!editor || typeof editor.getValue !== 'function') return;
+    let content = editor.getValue();
+    const matches = [...content.matchAll(/<video\b[^>]*data-videosnap-id="([^"]+)"[^>]*>/g)];
+    if (!matches.length) return;
+    const metaMap = loadVideosnapMetaMap();
+    const now = Date.now();
+    let changed = false;
+    for (const [, id] of matches) {
+      const meta = metaMap[id];
+      if (!meta || now - meta.fetchedAt > VIDEOSNAP_TTL_MS) {
+        content = content.replace(
+          new RegExp(`<video\\b[^>]*data-videosnap-id="${id}"[^>]*>`, 'g'),
+          `<p style="padding:12px;background:#fff1f0;border:1px solid #ffa39e;border-radius:4px;color:#a8071a;">[视频已过期] 请重新采集文章以恢复视频播放</p>`,
+        );
+        changed = true;
+        continue;
+      }
+      try {
+        if (!window.ChannelsDecoder || typeof window.ChannelsDecoder.ensureModule !== 'function') {
+          throw new Error('解密模块不可用');
+        }
+        await window.ChannelsDecoder.ensureModule();
+        const response = await fetchWithTimeout(meta.fullUrl);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const encrypted = new Uint8Array(await response.arrayBuffer());
+        const decrypted = await window.ChannelsDecoder.decryptChannelsMp4(encrypted, meta.decodeKey);
+        const blob = new Blob([decrypted], { type: 'video/mp4' });
+        const blobUrl = URL.createObjectURL(blob);
+        pendingCollectedBlobs.push({ id: meta.id, blobUrl, blob, desc: meta.desc || '视频' });
+        content = content.replace(
+          new RegExp(`<video\\b[^>]*data-videosnap-id="${id}"[^>]*>`, 'g'),
+          `<video data-videosnap-id="${id}" src="${blobUrl}" poster="${(meta.poster || '').replace(/"/g, '&quot;')}" controls preload="metadata" style="max-width:100%;"></video><button type="button" class="btn-video-download" data-video-id="${id}">下载 MP4</button>`,
+        );
+        changed = true;
+      } catch (err) {
+        console.warn('[视频恢复] 失败', id, err.message);
+        content = content.replace(
+          new RegExp(`<video\\b[^>]*data-videosnap-id="${id}"[^>]*>`, 'g'),
+          `<p style="padding:12px;background:#fff1f0;border:1px solid #ffa39e;border-radius:4px;color:#a8071a;">[视频恢复失败] ${escapeHtml(meta.desc || '')} · ${err.message}</p>`,
+        );
+        changed = true;
+      }
+    }
+    if (changed) {
+      editorSetValue(content);
+      saveContent();
+      updatePreview();
+    }
+  }
+
+  function attachVideoDownloadHandlers(container, blobs) {
+    if (!container || !blobs || !blobs.length) return;
+    container.querySelectorAll('button.btn-video-download').forEach((btn) => {
+      if (btn.dataset.bound === '1') return;
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.videoId;
+        const entry = blobs.find((b) => b.id === id);
+        if (!entry) return;
+        const a = document.createElement('a');
+        a.href = entry.blobUrl;
+        a.download = `${entry.desc.replace(/[\\/:*?"<>|]/g, '_').slice(0, 60) || 'video'}.mp4`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      });
+    });
+  }
+
   function openCollectArticleModal() {
     if (!ensureCollectArticleModal()) {
       showToast('采集文章面板加载失败，请刷新页面后重试');
@@ -2262,6 +2428,7 @@
       setCollectStatus('请输入以 http 或 https 开头的文章链接', 'error');
       return;
     }
+    const wantVideos = collectIncludeVideos?.checked === true;
     if (btnFetchArticle) {
       btnFetchArticle.disabled = true;
       btnFetchArticle.textContent = '采集中...';
@@ -2272,24 +2439,39 @@
       collectArticleMarkdown.dataset.format = 'markdown';
     }
     if (collectArticlePreview) collectArticlePreview.style.display = 'none';
-    setCollectStatus('正在采集文章内容...');
+    setCollectStatus(wantVideos ? '正在采集文章内容（含视频号视频，需联网解密）...' : '正在采集文章内容...');
     try {
-      const result = await fetchArticleHtml(url);
+      const result = await fetchArticleHtml(url, { wantVideos });
       const isTikHubResult = String(result.via || '').startsWith('tikhub');
-      const article = isTikHubResult
+      let article = isTikHubResult
         ? parseCollectedArticleHtml(result.html, url)
         : parseCollectedArticle(result.html, url);
       if (!article.content || article.chars < 20) throw new Error('未识别到足够的正文内容');
+      const collectedBlobs = [];
+      if (wantVideos && Array.isArray(result.videos) && result.videos.length > 0) {
+        const injected = await decryptAndInjectVideosnaps(article.content, result.videos, url, setCollectStatus);
+        article = { ...article, content: injected.html, markdown: injected.html, chars: stripHtmlToText(injected.html).length };
+        collectedBlobs.push(...injected.blobs);
+        if (injected.failures.length) {
+          console.warn('[采集] 视频解密失败：', injected.failures);
+        }
+      }
+      pendingCollectedBlobs = collectedBlobs;
+      pendingCollectedArticleUrl = url;
       if (collectArticleTitle) collectArticleTitle.textContent = article.title;
+      const videoLabel = (wantVideos && result.videos && result.videos.length) ? ` · 视频 ${result.videos.length}` : '';
       const viaLabel = result.via === 'tikhub-json' ? 'TikHub JSON 降级采集' : (isTikHubResult ? 'TikHub 采集' : (result.via === 'proxy' ? '代理采集' : '直连采集'));
-      if (collectArticleMeta) collectArticleMeta.textContent = `${article.chars} 字 · ${viaLabel} · ${article.format === 'html' ? 'HTML 导入' : 'Markdown 导入'}`;
+      if (collectArticleMeta) collectArticleMeta.textContent = `${article.chars} 字 · ${viaLabel} · ${article.format === 'html' ? 'HTML 导入' : 'Markdown 导入'}${videoLabel}`;
       if (collectArticleMarkdown) {
         collectArticleMarkdown.value = article.content;
         collectArticleMarkdown.dataset.format = article.format;
       }
       if (collectArticlePreview) collectArticlePreview.style.display = 'block';
       if (btnApplyCollectedArticle) btnApplyCollectedArticle.disabled = false;
-      setCollectStatus('采集成功。可在下方微调内容后导入编辑器。', 'ok');
+      const warnBits = [];
+      if (result.videoEnumerateErrors && result.videoEnumerateErrors.length) warnBits.push(`部分视频号列表获取失败：${result.videoEnumerateErrors.join('；')}`);
+      if (result.unmatched && result.unmatched.length) warnBits.push(`${result.unmatched.length} 个视频号未匹配到源视频`);
+      setCollectStatus(warnBits.length ? `采集成功，但 ${warnBits.join('；')}` : '采集成功。可在下方微调内容后导入编辑器。', warnBits.length ? 'error' : 'ok');
     } catch (err) {
       if (collectArticlePreview) collectArticlePreview.style.display = 'none';
       if (collectArticleMarkdown) {
@@ -4191,6 +4373,7 @@
     }
     updatePreview();
     updateStats();
+    restoreVideosnapsOnLoad().catch((err) => console.warn('[视频恢复] 初始化失败', err));
 
     // Auto-save to article manager on content change
     editorOnChange(scheduleArticleSave);

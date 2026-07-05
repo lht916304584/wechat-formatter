@@ -2,7 +2,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const { collectArticle } = require('../lib/article-collector');
+const { collectArticleWithVideos } = require('../lib/article-collector');
 
 const root = path.resolve(__dirname, '..');
 const host = '127.0.0.1';
@@ -65,11 +65,12 @@ function createServer() {
         if (chunks.length) {
           try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch (e) { body = {}; }
         }
-        collectArticle({
+        collectArticleWithVideos({
           url: body.url || requestUrl.searchParams.get('url'),
           apiKey: process.env.TIKHUB_API_KEY || process.env.TIKHUB_TOKEN || body.apiKey || req.headers['x-tikhub-key'],
           baseUrl: process.env.TIKHUB_BASE_URL || body.baseUrl || req.headers['x-tikhub-base'],
           fetchImpl: fetch,
+          wantVideos: body.wantVideos === true,
         })
           .then(result => sendJson(res, 200, result))
           .catch(err => sendJson(res, 502, { ok: false, error: err.message || '采集失败' }));

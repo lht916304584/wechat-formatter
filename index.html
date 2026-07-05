@@ -441,6 +441,10 @@
             <button id="btnFetchArticle" class="btn btn-primary btn-small">采集</button>
           </div>
         </label>
+        <label class="collect-optin">
+          <input type="checkbox" id="collectIncludeVideos">
+          <span>同时采集视频号视频 <em id="collectVideoCostHint" class="collect-cost-hint">约 $0.01/作者账号</em></span>
+        </label>
         <div class="collect-service-box">
           <div class="collect-service-head">
             <strong>TikHub 公众号采集</strong>
@@ -1132,6 +1136,7 @@
   </script>
   <script src="js/themes.js"></script>
   <script src="js/wechat-renderer.js"></script>
+  <script src="js/channels-decoder.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
