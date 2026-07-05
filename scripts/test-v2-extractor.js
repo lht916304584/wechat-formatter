@@ -509,6 +509,70 @@ const sampleV2Payload = {
   }
   console.log('  PASS\n');
 
+  // Test 2i: Article HTML uses WeChat-style lazy-loaded images (data-src + placeholder src).
+  // Verify fixLazyLoadedImages swaps data-src into src so the article renders.
+  harness.calls = [];
+  const lazyImageFetch = async (endpoint, options = {}) => {
+    harness.calls.push({ endpoint, options });
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify({
+          code: 200,
+          data: {
+            title: '带图文章',
+            nick_name: '图文测试',
+            content: {
+              content_noencode: '<p>段落文字。</p><p><img class="rich_pages wxw-img" data-src="https://mmbiz.qpic.cn/mmbiz_jpg/abc/640?wx_fmt=jpeg" data-w="1080" src="" alt="图片"></p><p>另一段文字。</p><p><img data-src="https://mmbiz.qpic.cn/mmbiz_png/def/640?wx_fmt=png" src="data:image/gif;base64,placeholder"></p>',
+              desc: '图片懒加载',
+              create_time: '2025-07-01',
+            },
+          },
+        });
+      },
+    };
+  };
+
+  const result2i = await collectArticle({
+    url: 'https://mp.weixin.qq.com/s/lazy-img',
+    apiKey: 'TEST_KEY',
+    baseUrl: 'https://api.tikhub.io',
+    fetchImpl: lazyImageFetch,
+  });
+
+  console.log('Test 2i — via:', result2i.via);
+  console.log('  HTML:', result2i.html);
+  if (result2i.via !== 'tikhub-v2') {
+    console.error('FAIL: expected via=tikhub-v2, got', result2i.via);
+    process.exit(1);
+  }
+  // Use negative lookbehind so we only match a real src=, not data-src=.
+  if (!/(?<!data-)src="https:\/\/mmbiz\.qpic\.cn\/mmbiz_jpg\/abc\/640\?wx_fmt=jpeg"/.test(result2i.html)) {
+    console.error('FAIL: data-src not swapped into src for first image');
+    process.exit(1);
+  }
+  if (!/(?<!data-)src="https:\/\/mmbiz\.qpic\.cn\/mmbiz_png\/def\/640\?wx_fmt=png"/.test(result2i.html)) {
+    console.error('FAIL: data-src not swapped into src for second image (placeholder replaced)');
+    process.exit(1);
+  }
+  // data-src attribute should still be preserved (we only add src, don't strip data-src)
+  if (!result2i.html.includes('data-src="https://mmbiz.qpic.cn/mmbiz_jpg/abc/640')) {
+    console.error('FAIL: data-src attribute should be preserved');
+    process.exit(1);
+  }
+  // The placeholder src must be gone after swap
+  if (result2i.html.includes('src="data:image/gif;base64,placeholder"')) {
+    console.error('FAIL: placeholder src should have been replaced');
+    process.exit(1);
+  }
+  // The empty src="" must be gone after swap
+  if (result2i.html.includes('src="" alt="图片"')) {
+    console.error('FAIL: empty src="" should have been replaced');
+    process.exit(1);
+  }
+  console.log('  PASS\n');
+
   // Test 3: All endpoints fail → aggregated error.
   harness.calls = [];
   const failFetch = async () => ({
