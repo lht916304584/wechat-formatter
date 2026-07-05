@@ -377,6 +377,89 @@ const sampleV2Payload = {
   }
   console.log('  PASS\n');
 
+  // Test 2f: content_noencode is HTML-entity-encoded (no raw tags). Verify decoding path.
+  harness.calls = [];
+  const entityEncodedFetch = async (endpoint, options = {}) => {
+    harness.calls.push({ endpoint, options });
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        const encoded = '&lt;p&gt;&lt;strong&gt;实体编码段落&lt;/strong&gt;：这是被 HTML 实体编码过的正文内容，长度足够通过阈值检查，用来验证解码逻辑能正确还原。&lt;/p&gt;&lt;p&gt;第二段落继续展开论述。&lt;/p&gt;';
+        return JSON.stringify({
+          code: 200,
+          data: {
+            title: '实体编码',
+            nick_name: 'TikHub V2',
+            content: { content_noencode: encoded, desc: '摘要', user_name: 'wx_id' },
+          },
+        });
+      },
+    };
+  };
+
+  const result2f = await collectArticle({
+    url: 'https://mp.weixin.qq.com/s/entity-encoded',
+    apiKey: 'TEST_KEY',
+    baseUrl: 'https://api.tikhub.io',
+    fetchImpl: entityEncodedFetch,
+  });
+
+  console.log('Test 2f — via:', result2f.via);
+  console.log('  HTML (first 300 chars):', result2f.html.slice(0, 300));
+  if (result2f.via !== 'tikhub-v2') {
+    console.error('FAIL: expected via=tikhub-v2, got', result2f.via);
+    process.exit(1);
+  }
+  if (!result2f.html.includes('<strong>实体编码段落</strong>')) {
+    console.error('FAIL: entity-encoded content_noencode not decoded');
+    process.exit(1);
+  }
+  console.log('  PASS\n');
+
+  // Test 2g: content_noencode is plain text (no HTML tags at all). Verify plain-text wrapping.
+  harness.calls = [];
+  const plainTextCneFetch = async (endpoint, options = {}) => {
+    harness.calls.push({ endpoint, options });
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify({
+          code: 200,
+          data: {
+            title: '纯文本 content_noencode',
+            nick_name: 'TikHub V2',
+            content: {
+              content_noencode: '这是 content_noencode 字段返回的纯文本正文，没有 HTML 标签但长度足够通过阈值检查，验证能被正确包成段落。\n\n第二段纯文本内容继续展开。',
+              desc: '摘要',
+              user_name: 'wx_id',
+            },
+          },
+        });
+      },
+    };
+  };
+
+  const result2g = await collectArticle({
+    url: 'https://mp.weixin.qq.com/s/plain-cne',
+    apiKey: 'TEST_KEY',
+    baseUrl: 'https://api.tikhub.io',
+    fetchImpl: plainTextCneFetch,
+  });
+
+  console.log('Test 2g — via:', result2g.via);
+  console.log('  HTML (first 300 chars):', result2g.html.slice(0, 300));
+  if (result2g.via !== 'tikhub-v2') {
+    console.error('FAIL: expected via=tikhub-v2, got', result2g.via);
+    process.exit(1);
+  }
+  if (!result2g.html.includes('<p>这是 content_noencode 字段返回的纯文本正文')) {
+    console.error('FAIL: plain-text content_noencode not wrapped in <p>');
+    process.exit(1);
+  }
+  console.log('  PASS\n');
+
   // Test 3: All endpoints fail → aggregated error.
   harness.calls = [];
   const failFetch = async () => ({

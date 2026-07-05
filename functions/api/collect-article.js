@@ -288,6 +288,37 @@ function plainTextToParagraphHtml(text) {
     .join('');
 }
 
+function decodeHtmlEntities(text) {
+  if (typeof text !== 'string') return '';
+  if (!/&lt;|&gt;|&quot;|&#39;|&nbsp;|&amp;/.test(text)) return text;
+  return text
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&');
+}
+
+function extractContentNoencode(value) {
+  if (typeof value !== 'string') return '';
+  let text = value.trim();
+  if (text.length <= 50) return '';
+
+  if (!/<\/?[a-z][\s\S]*>/i.test(text) && /&lt;[a-z]/i.test(text)) {
+    text = decodeHtmlEntities(text).trim();
+  }
+
+  if (/<\/?[a-z][\s\S]*>/i.test(text)) {
+    const plain = cleanText(text.replace(/<[^>]+>/g, ''));
+    if (plain && !looksLikeKnownWrongCollection(text)) return text;
+  }
+
+  const plain = cleanText(text.replace(/<[^>]+>/g, ''));
+  if (plain && !looksLikeKnownWrongCollection(text)) return plainTextToParagraphHtml(text);
+  return '';
+}
+
 function pickLongestPlainText(root, depth = 0) {
   if (root == null || depth > 8) return '';
   if (typeof root === 'string') {
@@ -329,10 +360,17 @@ function extractV2ArticleHtml(payload) {
     return true;
   };
 
-  // Step 1: known HTML field names. content_noencode is the actual V2 body field observed in production.
-  const htmlKeys = ['content_noencode', 'content_html', 'raw_content', 'html', 'rich_media_content', 'article_html', 'raw_html'];
-  for (const key of htmlKeys) {
-    if (acceptHtml(content[key]) || acceptHtml(data[key])) break;
+  // Step 0: content_noencode — observed production V2 body field. Tolerates raw HTML,
+  // entity-encoded HTML, and plain text.
+  const cne = extractContentNoencode(content.content_noencode);
+  if (cne) html = cne;
+
+  // Step 1: known HTML field names.
+  if (!html) {
+    const htmlKeys = ['content_html', 'raw_content', 'html', 'rich_media_content', 'article_html', 'raw_html'];
+    for (const key of htmlKeys) {
+      if (acceptHtml(content[key]) || acceptHtml(data[key])) break;
+    }
   }
 
   // Step 2: score-based HTML extraction across all nested strings.
@@ -416,9 +454,23 @@ async function requestTikHub(endpoint, apiKey, mode = 'html', articleUrl = '') {
     : (mode === 'json' ? extractArticleHtmlFromJson(payload) : extractTikHubHtml(payload));
   if (!html) {
     const shape = payloadShape(payload);
+    let cneDebug = '';
+    if (mode === 'v2') {
+      const cneRoot = payload && typeof payload === 'object' && payload.data && typeof payload.data === 'object'
+        && payload.data.content && typeof payload.data.content === 'object' ? payload.data.content : null;
+      const cne = cneRoot ? cneRoot.content_noencode : undefined;
+      if (cne === undefined) {
+        cneDebug = '; content_noencode=absent';
+      } else if (typeof cne === 'string') {
+        const sample = cne.slice(0, 80).replace(/\s+/g, ' ');
+        cneDebug = `; content_noencode=len=${cne.length},hasTags=${/<\/?[a-z][\s\S]*>/i.test(cne)},sample="${sample}"`;
+      } else {
+        cneDebug = `; content_noencode=type=${typeof cne}`;
+      }
+    }
     const label = mode === 'v2' ? 'TikHub V2 response did not contain target article content'
       : (mode === 'json' ? 'TikHub JSON response did not contain target article content' : 'TikHub HTML response did not contain target article content');
-    throw new Error(`${label}${shape ? `; shape=${shape}` : ''}`);
+    throw new Error(`${label}${shape ? `; shape=${shape}` : ''}${cneDebug}`);
   }
   return html;
 }
