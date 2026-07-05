@@ -400,18 +400,6 @@ async function collectArticle({ url, apiKey, baseUrl }) {
       mode: 'v2',
       attempts: 1,
     });
-    endpoints.push({
-      url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_html?url=${encoded}`,
-      via: index === 0 ? 'tikhub-html' : 'tikhub-html-alt',
-      mode: 'html',
-      attempts: 1,
-    });
-    endpoints.push({
-      url: `${base}/api/v1/wechat_mp/web/fetch_mp_article_detail_json?url=${encoded}`,
-      via: index === 0 ? 'tikhub-json' : 'tikhub-json-alt',
-      mode: 'json',
-      attempts: 1,
-    });
   });
   const errors = [];
   for (const endpoint of endpoints) {

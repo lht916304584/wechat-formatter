@@ -73,23 +73,31 @@ const sampleV2Payload = {
   }
   console.log('  PASS\n');
 
-  // Test 2: V2 fails → fallback to old HTML endpoint succeeds.
+  // Test 2: Primary base V2 fails → fallback base V2 succeeds.
   harness.calls = [];
   harness.lastBody = null;
-  const fallbackHtml = '<html><body><article><h1>旧接口标题</h1><div id="js_content"><p>旧接口正文段落。</p></div></article></body></html>';
-  const fallbackFetch = async (endpoint, options = {}) => {
+  const altBaseFetch = async (endpoint, options = {}) => {
     harness.calls.push({ endpoint, options });
-    if (endpoint.includes('/v2/fetch_article_detail')) {
+    if (endpoint.includes('//api.tikhub.io/')) {
       return {
-        ok: true,
-        status: 200,
-        async text() { return JSON.stringify({ code: 200, data: { title: 'x', content: {} } }); },
+        ok: false,
+        status: 502,
+        async text() { return JSON.stringify({ message: 'Bad Gateway on primary' }); },
       };
     }
     return {
       ok: true,
       status: 200,
-      async text() { return JSON.stringify({ code: 200, data: { html: fallbackHtml } }); },
+      async text() {
+        return JSON.stringify({
+          code: 200,
+          data: {
+            title: '备用通道标题',
+            nick_name: '备用公众号',
+            content: { content_html: '<p><strong>备用通道</strong>返回的正文段落，足够长以通过长度阈值检查。这是一段示例内容，用来验证多 base 兜底机制能正常工作。</p><p>第二段落内容补充。</p>' },
+          },
+        });
+      },
     };
   };
 
@@ -97,17 +105,17 @@ const sampleV2Payload = {
     url: 'https://mp.weixin.qq.com/s/abc123',
     apiKey: 'TEST_KEY',
     baseUrl: 'https://api.tikhub.io',
-    fetchImpl: fallbackFetch,
+    fetchImpl: altBaseFetch,
   });
 
   console.log('Test 2 — via:', result2.via);
-  console.log('  endpoints called:', harness.calls.map(c => c.endpoint.replace('https://api.tikhub.io', '')));
-  if (result2.via !== 'tikhub-html') {
-    console.error('FAIL: expected via=tikhub-html after V2 empty, got', result2.via);
+  console.log('  endpoints called:', harness.calls.map(c => c.endpoint));
+  if (result2.via !== 'tikhub-v2-alt') {
+    console.error('FAIL: expected via=tikhub-v2-alt, got', result2.via);
     process.exit(1);
   }
-  if (!result2.html.includes('旧接口正文段落')) {
-    console.error('FAIL: fallback body missing');
+  if (!result2.html.includes('返回的正文段落')) {
+    console.error('FAIL: alt-base body missing');
     process.exit(1);
   }
   console.log('  PASS\n');
