@@ -2308,28 +2308,12 @@
     const failures = [];
     let workingHtml = html;
     for (const video of videos) {
-      console.log('[采集][诊断] video 对象:', {
-        id: video.id,
-        fullUrl: video.fullUrl,
-        decodeKey: video.decodeKey,
-        poster: video.poster,
-        desc: video.desc,
-      });
-      let urlParseError = null;
-      try { if (video.fullUrl) new URL(video.fullUrl); }
-      catch (e) { urlParseError = e.message; }
-      if (urlParseError) {
-        console.error('[采集][诊断] fullUrl 解析失败:', video.fullUrl, '→', urlParseError);
-      }
       try {
         if (statusSink) statusSink(`正在解密视频：${video.desc || video.title || ''}（${video.duration || ''}秒）`);
         const proxyUrl = `./api/channels-video-bytes?url=${encodeURIComponent(video.fullUrl || '')}`;
-        console.log('[采集][诊断] fetch via proxy:', proxyUrl, '(原 URL:', video.fullUrl, ')');
         const response = await fetchWithTimeout(proxyUrl);
-        console.log('[采集][诊断] fetch 返回:', response.status, response.type);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const encrypted = new Uint8Array(await response.arrayBuffer());
-        console.log('[采集][诊断] 加密字节数:', encrypted.length);
         const decrypted = await window.ChannelsDecoder.decryptChannelsMp4(encrypted, video.decodeKey);
         const blob = new Blob([decrypted], { type: 'video/mp4' });
         const blobUrl = URL.createObjectURL(blob);
@@ -2339,11 +2323,6 @@
           `<video data-videosnap-id="${video.id}" src="${blobUrl}" poster="${(video.poster || '').replace(/"/g, '&quot;')}" controls preload="metadata" style="max-width:100%;"></video><button type="button" class="btn-video-download" data-video-id="${video.id}">下载 MP4</button>`,
         );
       } catch (err) {
-        console.error('[采集][诊断] fetch/解密失败:', {
-          name: err.name,
-          message: err.message,
-          stack: err.stack,
-        });
         failures.push({ id: video.id, desc: video.desc || video.title || '', error: err.message });
         workingHtml = workingHtml.replace(
           new RegExp(`<video\\b[^>]*data-videosnap-id="${video.id}"[^>]*>`, 'g'),
