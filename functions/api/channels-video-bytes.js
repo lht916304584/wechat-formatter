@@ -1,6 +1,4 @@
-import channelsProxy from '../../lib/channels-video-proxy.js';
-
-const { fetchChannelsVideoBytes } = channelsProxy;
+import { fetchChannelsVideoBytes } from '../../lib/channels-video-proxy.js';
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
