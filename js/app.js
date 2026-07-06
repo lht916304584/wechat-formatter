@@ -11,6 +11,15 @@
   const btnExportHtml = document.getElementById('btnExportHtml');
   const btnImportFile = document.getElementById('btnImportFile');
   const btnClear = document.getElementById('btnClear');
+  const btnCollectArticleToolbar = document.getElementById('btnCollectArticleToolbar');
+  const btnThemePicker = document.getElementById('btnThemePicker');
+  const themePickerModal = document.getElementById('themePickerModal');
+  const btnCloseThemePicker = document.getElementById('btnCloseThemePicker');
+  const themePickerSearch = document.getElementById('themePickerSearch');
+  const themePickerChips = document.getElementById('themePickerChips');
+  const themePickerGrid = document.getElementById('themePickerGrid');
+  const themeTriggerSwatch = document.getElementById('themeTriggerSwatch');
+  const themeTriggerLabel = document.getElementById('themeTriggerLabel');
   const btnContactService = document.getElementById('btnContactService');
   const contactServiceModal = document.getElementById('contactServiceModal');
   const btnCloseContactService = document.getElementById('btnCloseContactService');
@@ -84,6 +93,9 @@
   let editor = window.editor || null;
   let _monacoDisposable = [];
   const pendingEditorChangeHandlers = [];
+  // Tracks the last known cursor position so toolbar buttons can insert there
+  // even when the editor hasn't been focused yet (Monaco defaults to (1,1)).
+  let lastCursorPos = null;
 
   function getActiveEditor() {
     if (window.editor && window.editor !== editor) editor = window.editor;
@@ -1683,7 +1695,7 @@
           </div>
           <label class="collect-optin">
             <input type="checkbox" id="collectIncludeVideos">
-            <span>同时采集视频号视频 <em id="collectVideoCostHint" class="collect-cost-hint">约 $0.01/作者账号</em></span>
+            <span>同时采集视频号视频 <em id="collectVideoCostHint" class="collect-cost-hint">约 $0.015 × (作者数 + 视频数)</em></span>
           </label>
           <div class="collect-service-box">
             <div class="collect-service-head">
@@ -1736,7 +1748,26 @@
         collectArticleFromUrl();
       }
     });
+    collectIncludeVideos?.addEventListener('change', () => updateCollectVideoCostHint());
+    updateCollectVideoCostHint();
     return true;
+  }
+
+  // Cost hint formula: TikHub charges ~$0.015 per call.
+  // Per article: 1 enumerate call per unique author + 1 detail call per video.
+  function updateCollectVideoCostHint(knownAuthors, knownVideos) {
+    if (!collectVideoCostHint) return;
+    const checked = collectIncludeVideos?.checked === true;
+    const a = Number.isFinite(knownAuthors) ? knownAuthors : null;
+    const n = Number.isFinite(knownVideos) ? knownVideos : null;
+    if (checked && a !== null && n !== null) {
+      const total = 1 + a + n; // article fetch + enumerate + detail
+      collectVideoCostHint.textContent = `本次约 ${total} 次调用 ≈ $${(total * 0.015).toFixed(3)}（${a} 作者 + ${n} 视频）`;
+    } else if (checked) {
+      collectVideoCostHint.textContent = '约 $0.015 × (1 + 作者数 + 视频数) — 采集后回填实际花费';
+    } else {
+      collectVideoCostHint.textContent = '约 $0.015 × (作者数 + 视频数)';
+    }
   }
 
   function ensureCollectArticleModal() {
@@ -2474,6 +2505,15 @@
       if (result.videoEnumerateErrors && result.videoEnumerateErrors.length) warnBits.push(`部分视频号列表获取失败：${result.videoEnumerateErrors.join('；')}`);
       if (result.unmatched && result.unmatched.length) warnBits.push(`${result.unmatched.length} 个视频号未匹配到源视频`);
       setCollectStatus(warnBits.length ? `采集成功，但 ${warnBits.join('；')}` : '采集成功。可在下方微调内容后导入编辑器。', warnBits.length ? 'error' : 'ok');
+      // Backfill actual cost once video count is known.
+      if (wantVideos && Array.isArray(result.videos)) {
+        const usernames = new Set();
+        for (const v of result.videos) {
+          const u = v && (v.username || (v.author && v.author.username));
+          if (u) usernames.add(u);
+        }
+        updateCollectVideoCostHint(usernames.size, result.videos.length);
+      }
     } catch (err) {
       if (collectArticlePreview) collectArticlePreview.style.display = 'none';
       if (collectArticleMarkdown) {
@@ -2631,7 +2671,22 @@
   templateSelect.addEventListener('change', () => {
     setActivePalette(templateSelect.value);
     updatePreview();
+    updateThemeTrigger();
   });
+  if (btnThemePicker) btnThemePicker.addEventListener('click', openThemePicker);
+  if (btnCloseThemePicker) btnCloseThemePicker.addEventListener('click', closeThemePicker);
+  if (themePickerModal) {
+    themePickerModal.addEventListener('click', (e) => {
+      if (e.target === themePickerModal) closeThemePicker();
+    });
+  }
+  if (themePickerSearch) {
+    themePickerSearch.addEventListener('input', (e) => {
+      themePickerState.search = e.target.value || '';
+      renderThemePickerGrid();
+    });
+  }
+  updateThemeTrigger();
   inputFormat.addEventListener('change', () => {
     updatePreview();
   });
@@ -2692,7 +2747,24 @@
     // Monaco Editor path
     if (editor.getModel && editor.getSelection) {
       const model = editor.getModel();
-      const selection = editor.getSelection();
+      let selection = editor.getSelection();
+      // If the editor has never been focused, Monaco returns the default
+      // (1,1) selection, which would corrupt the document. Fall back to the
+      // last known cursor position tracked via onDidChangeCursorPosition.
+      const isDefaultSelection = selection
+        && selection.startLineNumber === 1 && selection.startColumn === 1
+        && selection.endLineNumber === 1 && selection.endColumn === 1
+        && !editor.hasTextFocus();
+      if (isDefaultSelection && lastCursorPos) {
+        selection = {
+          startLineNumber: lastCursorPos.lineNumber,
+          startColumn: lastCursorPos.column,
+          endLineNumber: lastCursorPos.lineNumber,
+          endColumn: lastCursorPos.column,
+          positionLineNumber: lastCursorPos.lineNumber,
+          positionColumn: lastCursorPos.column,
+        };
+      }
       const selectedText = model ? model.getValueInRange(selection) : '';
       if (selectedText) {
         editor.executeEdits('toolbar', [{ range: selection, text: before + selectedText + after }]);
@@ -4057,6 +4129,8 @@
   btnCopyHtml.addEventListener('click', copyHtmlCode);
   btnDownloadHtml.addEventListener('click', downloadHtml);
   htmlModal.addEventListener('click', (e) => { if (e.target === htmlModal) closeModal(htmlModal); });
+  // Top-bar 采集文章 button — opens collect modal directly (independent of lazy bind).
+  btnCollectArticleToolbar?.addEventListener('click', () => openCollectArticleModal());
   if (btnContactService && contactServiceModal) {
     btnContactService.addEventListener('click', () => openModal(contactServiceModal));
   }
@@ -4383,6 +4457,19 @@
       if (activeTab === 'outline') renderOutlineTab();
       if (activeTab === 'images') renderImagesTab();
     });
+    // Track last cursor position so toolbar buttons can insert there even
+    // when the editor hasn't been focused (Monaco defaults to (1,1) otherwise).
+    try {
+      const ed = getActiveEditor();
+      if (ed && typeof ed.onDidChangeCursorPosition === 'function') {
+        const d = ed.onDidChangeCursorPosition((e) => {
+          if (e && e.position) lastCursorPos = { lineNumber: e.position.lineNumber, column: e.position.column };
+        });
+        if (d) _monacoDisposable.push(d);
+      }
+    } catch (err) {
+      console.warn('cursor tracker setup failed', err);
+    }
   }
 
   async function bootApp() {
@@ -4959,6 +5046,89 @@
 
   function renderPaletteSwatch(pal) {
     return `<span class="style-swatch" style="--c1:${pal.bgLight};--c2:${pal.primary};--c3:${pal.accent};--c4:${pal.textMain}"></span>`;
+  }
+
+  const themePickerState = { category: 'all', search: '' };
+
+  function renderThemeChips() {
+    if (!themePickerChips) return;
+    const cats = (typeof PALETTE_CATEGORIES !== 'undefined') ? PALETTE_CATEGORIES : [];
+    const items = [{ key: 'all', label: '全部' }, ...cats];
+    themePickerChips.innerHTML = items.map(c => `
+      <button class="theme-chip ${c.key === themePickerState.category ? 'active' : ''}" data-cat="${c.key}" type="button">${escapeHtml(c.label)}</button>
+    `).join('');
+    themePickerChips.querySelectorAll('.theme-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        themePickerState.category = chip.dataset.cat;
+        renderThemeChips();
+        renderThemePickerGrid();
+      });
+    });
+  }
+
+  function renderThemePickerGrid() {
+    if (!themePickerGrid) return;
+    const term = themePickerState.search.trim().toLowerCase();
+    const cat = themePickerState.category;
+    const entries = Object.entries(PALETTES).filter(([key, pal]) => {
+      const c = pal.category || 'other';
+      if (cat !== 'all' && c !== cat) return false;
+      if (!term) return true;
+      const label = (pal.label || '').toLowerCase();
+      const desc = (pal.description || '').toLowerCase();
+      return label.includes(term) || desc.includes(term) || key.toLowerCase().includes(term);
+    });
+    const activeKey = getActivePaletteKey();
+    if (entries.length === 0) {
+      themePickerGrid.innerHTML = `<div class="theme-picker-empty">没有匹配的主题</div>`;
+      return;
+    }
+    themePickerGrid.innerHTML = entries.map(([key, pal]) => `
+      <button class="theme-card ${key === activeKey ? 'active' : ''}" data-theme-key="${escapeHtml(key)}" type="button">
+        <span class="theme-card-preview" style="background:${pal.bgLight};">
+          <span class="theme-card-stripe" style="background:${pal.primary};"></span>
+          <span class="theme-card-title" style="color:${pal.textMain};">Aa</span>
+          <span class="theme-card-bar" style="background:${pal.accent};"></span>
+          <span class="theme-card-text" style="color:${pal.textSub};">正文样例</span>
+        </span>
+        <span class="theme-card-name">${escapeHtml(pal.label)}</span>
+        ${pal.description ? `<span class="theme-card-desc">${escapeHtml(pal.description)}</span>` : ''}
+      </button>
+    `).join('');
+    themePickerGrid.querySelectorAll('.theme-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const k = card.dataset.themeKey;
+        setActivePalette(k);
+        if (templateSelect) templateSelect.value = k;
+        updatePreview();
+        updateThemeTrigger();
+        renderThemePickerGrid();
+      });
+    });
+  }
+
+  function updateThemeTrigger() {
+    if (!themeTriggerLabel || !themeTriggerSwatch) return;
+    const pal = TECH_PALETTE || PALETTES.tech;
+    themeTriggerLabel.textContent = pal.label || '主题';
+    themeTriggerSwatch.style.setProperty('--c1', pal.bgLight);
+    themeTriggerSwatch.style.setProperty('--c2', pal.primary);
+    themeTriggerSwatch.style.setProperty('--c3', pal.accent);
+    themeTriggerSwatch.style.setProperty('--c4', pal.textMain);
+  }
+
+  function openThemePicker() {
+    if (!themePickerModal) return;
+    themePickerState.category = 'all';
+    themePickerState.search = '';
+    if (themePickerSearch) themePickerSearch.value = '';
+    renderThemeChips();
+    renderThemePickerGrid();
+    themePickerModal.style.display = 'flex';
+  }
+
+  function closeThemePicker() {
+    if (themePickerModal) themePickerModal.style.display = 'none';
   }
 
   function renderStylesTab() {
@@ -6119,6 +6289,9 @@
         case 'cloud-sync':
           toggleSidePanel('settings');
           break;
+        case 'contact-service':
+          openModal(document.getElementById('contactServiceModal'));
+          break;
         case 'settings':
           toggleSidePanel('settings');
           break;
@@ -6408,35 +6581,55 @@
   }
 
   function renderPublishQuality() {
-    if (!publishQuality) return;
     const report = getPublishQualityReport();
     const topItems = report.items.slice(0, 6);
     const levelText = report.score >= 86 ? '阅读体验良好' : report.score >= 72 ? '可以发布，建议微调' : '建议先优化';
-    publishQuality.innerHTML = `
-      <div class="publish-quality-board ${report.level}">
-        <div class="publish-quality-score">
-          <strong>${report.score}</strong>
-          <span>${levelText}</span>
-        </div>
-        <div class="publish-quality-metrics">
-          <div><strong>${report.metrics.readTime}</strong><span>分钟</span></div>
-          <div><strong>${report.metrics.headings}</strong><span>标题</span></div>
-          <div><strong>${report.metrics.paragraphs}</strong><span>段落</span></div>
-          <div><strong>${report.metrics.images}</strong><span>图片</span></div>
-        </div>
-      </div>
-      <div class="publish-quality-list">
-        ${topItems.map(item => `
-          <div class="publish-quality-item ${item.level}">
-            <span></span>
-            <div>
-              <strong>${escapeHtml(item.title)}</strong>
-              <small>${escapeHtml(item.detail || '')}</small>
-            </div>
+
+    const summary = document.getElementById('publishQualitySummary');
+    if (summary) {
+      summary.innerHTML = `
+        <div class="publish-quality-board ${report.level}">
+          <div class="publish-quality-score">
+            <strong>${report.score}</strong>
+            <span>${levelText}</span>
           </div>
-        `).join('')}
-      </div>
-    `;
+          <div class="publish-quality-metrics">
+            <div><strong>${report.metrics.readTime}</strong><span>分钟</span></div>
+            <div><strong>${report.metrics.headings}</strong><span>标题</span></div>
+            <div><strong>${report.metrics.paragraphs}</strong><span>段落</span></div>
+            <div><strong>${report.metrics.images}</strong><span>图片</span></div>
+          </div>
+        </div>
+      `;
+    }
+
+    if (publishQuality) {
+      publishQuality.innerHTML = `
+        <div class="publish-quality-board ${report.level}">
+          <div class="publish-quality-score">
+            <strong>${report.score}</strong>
+            <span>${levelText}</span>
+          </div>
+          <div class="publish-quality-metrics">
+            <div><strong>${report.metrics.readTime}</strong><span>分钟</span></div>
+            <div><strong>${report.metrics.headings}</strong><span>标题</span></div>
+            <div><strong>${report.metrics.paragraphs}</strong><span>段落</span></div>
+            <div><strong>${report.metrics.images}</strong><span>图片</span></div>
+          </div>
+        </div>
+        <div class="publish-quality-list">
+          ${topItems.map(item => `
+            <div class="publish-quality-item ${item.level}">
+              <span></span>
+              <div>
+                <strong>${escapeHtml(item.title)}</strong>
+                <small>${escapeHtml(item.detail || '')}</small>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
   }
 
   function getCodeBlockStats(content) {
@@ -6741,6 +6934,37 @@
     document.querySelector('.publish-tab[data-pubtab="wechat"]')?.classList.add('active');
     document.getElementById('publishPaneWechat').style.display = 'block';
     document.getElementById('publishPaneExport').style.display = 'none';
+    // Reset WeChat sub-tab to quick
+    resetPublishWechatSubtab();
+    // Bind sub-tab switching once
+    bindPublishWechatSubtabs();
+  }
+
+  function resetPublishWechatSubtab() {
+    document.querySelectorAll('.publish-subtab').forEach(b => b.classList.remove('active'));
+    document.querySelector('.publish-subtab[data-pubsub="quick"]')?.classList.add('active');
+    const quick = document.getElementById('publishSubpaneQuick');
+    const report = document.getElementById('publishSubpaneReport');
+    if (quick) quick.style.display = 'block';
+    if (report) report.style.display = 'none';
+  }
+
+  function bindPublishWechatSubtabs() {
+    const subtabs = document.querySelectorAll('.publish-subtab');
+    if (!subtabs.length) return;
+    if (subtabs[0].dataset.bound === '1') return;
+    subtabs.forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.publish-subtab').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const sub = btn.dataset.pubsub;
+        const quick = document.getElementById('publishSubpaneQuick');
+        const report = document.getElementById('publishSubpaneReport');
+        if (quick) quick.style.display = sub === 'quick' ? 'block' : 'none';
+        if (report) report.style.display = sub === 'report' ? 'block' : 'none';
+      });
+      btn.dataset.bound = '1';
+    });
   }
   function closePublishModal() {
     if (publishModal) publishModal.style.display = 'none';

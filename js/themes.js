@@ -152,6 +152,31 @@ const PALETTES = {
   },
 };
 
+const PALETTE_CATEGORY_MAP = {
+  tech: 'classic', elegant: 'classic', business: 'classic', fresh: 'classic',
+  romantic: 'classic', vibrant: 'classic', classic: 'classic', minimal: 'classic', warm: 'classic',
+  'raphael-apple': 'brand', 'raphael-claude': 'brand', 'raphael-wechat': 'brand',
+  'raphael-media': 'brand', 'raphael-medium': 'brand', 'raphael-stripe': 'brand',
+  'raphael-workspace': 'brand', 'raphael-linear': 'brand', 'raphael-retro': 'brand',
+  'raphael-bloomberg': 'brand', 'raphael-notion': 'brand', 'raphael-github': 'brand',
+  'raphael-sspai': 'brand',
+  'raphael-dracula': 'editor', 'raphael-nord': 'editor', 'raphael-monokai': 'editor',
+  'raphael-solarized': 'editor', 'raphael-cyberpunk': 'editor',
+  'raphael-sakura': 'nature', 'raphael-ocean': 'nature', 'raphael-mint': 'nature',
+  'raphael-sunset': 'nature', 'raphael-forest': 'nature', 'raphael-glacier': 'nature',
+  'raphael-lavender': 'nature',
+  'raphael-ink': 'mood', 'raphael-coffee': 'mood', 'raphael-bauhaus': 'mood',
+  'raphael-copper': 'mood', 'raphael-pastel': 'mood',
+};
+
+const PALETTE_CATEGORIES = [
+  { key: 'classic', label: '经典' },
+  { key: 'brand', label: '品牌' },
+  { key: 'editor', label: '编辑器配色' },
+  { key: 'nature', label: '季节自然' },
+  { key: 'mood', label: '情绪艺术' },
+];
+
 const RAPHAEL_THEME_SEEDS = [
   ["raphael-apple","Mac","纯净现代的极致留白，适合日常记录的万能首选","#111","#0066cc","#000","#ffffff","#f5f5f7","#1d1d1f","#f5f5f7","#666","#e0e0e0","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif"],
   ["raphael-claude","Claude","温润的燕麦卡其色底，适合深度长文或文学哲思","#b75c3d","#b75c3d","#b75c3d","#f8f6f0","#f0ece4","#2b2b2b","#2b2b2b","#666","#e0ddd6","-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif"],
@@ -204,6 +229,10 @@ RAPHAEL_THEME_SEEDS.forEach(([id, label, description, primary, accent, pop, bgLi
     coverLabel: `${label.toUpperCase()} · RAPHAEL`,
     signatureLabel: label,
   };
+});
+
+Object.keys(PALETTES).forEach(id => {
+  PALETTES[id].category = PALETTE_CATEGORY_MAP[id] || 'other';
 });
 
 let TECH_PALETTE = PALETTES.tech;

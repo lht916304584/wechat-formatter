@@ -47,7 +47,7 @@
         </div>
         <div class="template-selector">
           <label>主题</label>
-          <select id="templateSelect">
+          <select id="templateSelect" style="display:none">
             <option value="tech">科技深蓝</option>
             <option value="elegant">文艺雅致</option>
             <option value="business">商务简约</option>
@@ -58,6 +58,13 @@
             <option value="minimal">极简黑白</option>
             <option value="warm">温暖焦糖</option>
           </select>
+          <button id="btnThemePicker" class="btn-theme-trigger" aria-label="选择主题" type="button">
+            <span class="theme-trigger-swatch" id="themeTriggerSwatch" aria-hidden="true"></span>
+            <span class="theme-trigger-label" id="themeTriggerLabel">科技深蓝</span>
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="3 5 6 8 9 5"></polyline>
+            </svg>
+          </button>
         </div>
       </div>
       <div class="toolbar-right">
@@ -68,6 +75,12 @@
             <polyline points="7 3 7 8 15 8"></polyline>
           </svg>
           保存
+        </button>
+        <button id="btnCollectArticleToolbar" class="btn btn-secondary" aria-label="采集文章">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v12"></path><polyline points="7 10 12 15 17 10"></polyline><path d="M4 20h16"></path><path d="M5 7h14"></path>
+          </svg>
+          采集文章
         </button>
         <button id="btnAiWriterToolbar" class="btn btn-secondary" aria-label="AI 助手">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -159,6 +172,14 @@
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>
               <span>云端同步</span>
             </div>
+            <div class="toolbar-dropdown-item" data-action="contact-service">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"></path>
+                <path d="M8 9h8"></path>
+                <path d="M8 13h5"></path>
+              </svg>
+              <span>联系客服</span>
+            </div>
             <div class="toolbar-dropdown-sep"></div>
             <div class="toolbar-dropdown-item" data-action="settings">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
@@ -206,13 +227,6 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="2.5"></circle><path d="M17.5 10.5l2-2a2.83 2.83 0 1 0-4-4l-2 2"></path><path d="M14.5 7.5l-9 9"></path><path d="M3 21l3-3"></path></svg>
         </button>
         <div class="activity-bar-spacer"></div>
-        <button class="activity-btn" id="btnContactService" title="联系客服" aria-label="联系客服">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"></path>
-            <path d="M8 9h8"></path>
-            <path d="M8 13h5"></path>
-          </svg>
-        </button>
         <button class="activity-btn" data-tab="settings" title="设置">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
         </button>
@@ -444,7 +458,7 @@
         </label>
         <label class="collect-optin">
           <input type="checkbox" id="collectIncludeVideos">
-          <span>同时采集视频号视频 <em id="collectVideoCostHint" class="collect-cost-hint">约 $0.01/作者账号</em></span>
+          <span>同时采集视频号视频 <em id="collectVideoCostHint" class="collect-cost-hint">约 $0.015 × (作者数 + 视频数)</em></span>
         </label>
         <div class="collect-service-box">
           <div class="collect-service-head">
@@ -791,6 +805,32 @@
     </div>
   </div>
 
+  <!-- 主题选择器弹窗 -->
+  <div id="themePickerModal" class="modal" role="dialog" aria-label="选择主题" style="display:none">
+    <div class="modal-content theme-picker-content">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="13.5" cy="6.5" r="2.5"></circle>
+            <circle cx="19" cy="13" r="2.5"></circle>
+            <circle cx="6" cy="12" r="2.5"></circle>
+            <circle cx="10" cy="20" r="2.5"></circle>
+            <path d="M12 2a10 10 0 1 0 0 20 1.5 1.5 0 0 0 1.06-2.56 1.5 1.5 0 0 1 1.06-2.56H17a5 5 0 0 0 5-5c0-5.52-4.48-10-10-10z"></path>
+          </svg>
+          选择主题
+        </div>
+        <button class="modal-close" id="btnCloseThemePicker"></button>
+      </div>
+      <div class="theme-picker-body">
+        <input type="text" id="themePickerSearch" class="theme-picker-search" placeholder="搜索主题名（如 claude、薄荷、极简）..." autocomplete="off">
+        <div class="theme-picker-chips" id="themePickerChips">
+          <button class="theme-chip active" data-cat="all" type="button">全部</button>
+        </div>
+        <div class="theme-picker-grid" id="themePickerGrid"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- 发布弹窗 -->
   <div id="publishModal" class="modal" role="dialog" aria-label="发布文章" style="display:none">
     <div class="modal-content" style="max-width:560px">
@@ -810,30 +850,35 @@
       </div>
       <!-- 复制到公众号 -->
       <div class="publish-pane" id="publishPaneWechat">
-        <h4>使用说明</h4>
-        <ol>
-          <li>点击下方「复制富文本」按钮</li>
-          <li>打开微信公众号后台编辑器</li>
-          <li>粘贴到编辑器中即可</li>
-        </ol>
-        <h4>发布信息</h4>
-        <div class="publish-meta" id="publishMeta"></div>
-        <h4>内容体检</h4>
-        <div class="publish-quality" id="publishQuality"></div>
-        <h4>发布前检查</h4>
-        <div class="publish-preflight" id="publishPreflight"></div>
-        <h4>复制诊断</h4>
-        <div class="publish-diagnostics" id="publishDiagnostics"></div>
-        <h4>预览效果</h4>
-        <div class="publish-preview-box" id="publishPreview"></div>
-        <div class="publish-actions">
-          <button id="btnPublishCopy" class="btn btn-primary">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-            </svg>
-            复制富文本
-          </button>
+        <div class="publish-subtabs">
+          <button class="publish-subtab active" data-pubsub="quick">快速发布</button>
+          <button class="publish-subtab" data-pubsub="report">完整报告</button>
+        </div>
+        <!-- 快速发布 -->
+        <div class="publish-subpane" id="publishSubpaneQuick">
+          <h4>发布信息</h4>
+          <div class="publish-meta" id="publishMeta"></div>
+          <div class="publish-quality-summary" id="publishQualitySummary"></div>
+          <div class="publish-actions">
+            <button id="btnPublishCopy" class="btn btn-primary">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              复制富文本
+            </button>
+          </div>
+        </div>
+        <!-- 完整报告 -->
+        <div class="publish-subpane" id="publishSubpaneReport" style="display:none">
+          <h4>内容体检</h4>
+          <div class="publish-quality" id="publishQuality"></div>
+          <h4>发布前检查</h4>
+          <div class="publish-preflight" id="publishPreflight"></div>
+          <h4>复制诊断</h4>
+          <div class="publish-diagnostics" id="publishDiagnostics"></div>
+          <h4>预览效果</h4>
+          <div class="publish-preview-box" id="publishPreview"></div>
         </div>
       </div>
       <!-- 导出文件 -->
