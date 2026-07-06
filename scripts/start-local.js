@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { collectArticleWithVideos } = require('../lib/article-collector');
+const { fetchChannelsVideoBytes } = require('../lib/channels-video-proxy');
 
 const root = path.resolve(__dirname, '..');
 const host = '127.0.0.1';
@@ -75,6 +76,33 @@ function createServer() {
           .then(result => sendJson(res, 200, result))
           .catch(err => sendJson(res, 502, { ok: false, error: err.message || '采集失败' }));
       });
+      return;
+    }
+
+    if ((req.url || '').startsWith('/api/channels-video-bytes')) {
+      if (req.method === 'OPTIONS') {
+        sendJson(res, 204, {});
+        return;
+      }
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { ok: false, error: '只支持 GET 请求' });
+        return;
+      }
+      const requestUrl = new URL(req.url, `http://${req.headers.host || `${host}:${preferredPort}`}`);
+      const targetUrl = requestUrl.searchParams.get('url') || '';
+      fetchChannelsVideoBytes(targetUrl)
+        .then(result => {
+          if (!result.ok) {
+            sendJson(res, result.status, { ok: false, error: result.error });
+            return;
+          }
+          send(res, 200, result.buffer, {
+            'Content-Type': 'application/octet-stream',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'no-store',
+          });
+        })
+        .catch(err => sendJson(res, 502, { ok: false, error: err.message || '代理失败' }));
       return;
     }
 

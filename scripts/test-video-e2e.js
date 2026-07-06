@@ -111,6 +111,24 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.url.startsWith('/api/channels-video-bytes')) {
+    const requestUrl = new URL(req.url, `http://127.0.0.1:${port}`);
+    const targetUrl = requestUrl.searchParams.get('url') || '';
+    (async () => {
+      try {
+        const upstream = await fetch(targetUrl);
+        const buf = Buffer.from(await upstream.arrayBuffer());
+        send(res, 200, buf, {
+          'Content-Type': 'application/octet-stream',
+          'Access-Control-Allow-Origin': '*',
+        });
+      } catch (err) {
+        sendJson(res, 502, { ok: false, error: err.message });
+      }
+    })();
+    return;
+  }
+
   serveStatic(req, res);
 });
 
