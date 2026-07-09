@@ -312,6 +312,7 @@ const Style = {
     return `<div style="margin:20px 0;border-radius:8px;overflow:hidden;">
   <div style="background:${p.primary};padding:8px 16px;display:flex;justify-content:space-between;align-items:center;">
     <span style="font-size:12px;color:${p.pop};letter-spacing:1px;">${lang || 'CODE'}</span>
+    <span data-code-copy style="font-size:12px;color:${p.pop};padding:2px 10px;border-radius:3px;background:rgba(255,255,255,0.12);cursor:pointer;">复制</span>
   </div>
   <div style="background:#0D1F33;padding:20px;overflow-x:auto;">
     <pre style="margin:0;font-size:13px;line-height:1.7;font-family:'Courier New',Courier,monospace;white-space:pre-wrap;word-break:break-all;">${codeHtml}</pre>

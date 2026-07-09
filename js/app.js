@@ -79,6 +79,7 @@
   const publishPreflight = document.getElementById('publishPreflight');
   const publishDiagnostics = document.getElementById('publishDiagnostics');
   const btnPublishCopy = document.getElementById('btnPublishCopy');
+  const btnLocalizeImages = document.getElementById('btnLocalizeImages');
   const btnPublishExportHtml = document.getElementById('btnPublishExportHtml');
   const btnPublishExportPdf = document.getElementById('btnPublishExportPdf');
   const btnPublishExportMarkdown = document.getElementById('btnPublishExportMarkdown');
@@ -936,23 +937,15 @@
       const pre = codeEl.closest('pre');
       if (!pre) return;
       const box = pre.parentElement;
-      if (!box || box.querySelector('.code-copy-btn')) return;
-      const header = box.querySelector('div');
-      if (!header) return;
-      const btn = document.createElement('button');
-      btn.className = 'code-copy-btn';
-      btn.textContent = '复制';
-      btn.type = 'button';
+      if (!box) return;
+      const btn = box.querySelector('[data-code-copy]');
+      if (!btn || btn.dataset.bound === '1') return;
+      btn.dataset.bound = '1';
       btn.onclick = () => {
         const text = codeEl.textContent || '';
+        const flash = (label) => { btn.textContent = label; setTimeout(() => btn.textContent = '复制', 1500); };
         if (navigator.clipboard) {
-          navigator.clipboard.writeText(text).then(() => {
-            btn.textContent = '已复制';
-            setTimeout(() => btn.textContent = '复制', 1500);
-          }).catch(() => {
-            btn.textContent = '失败';
-            setTimeout(() => btn.textContent = '复制', 1500);
-          });
+          navigator.clipboard.writeText(text).then(() => flash('已复制')).catch(() => flash('失败'));
         } else {
           const ta = document.createElement('textarea');
           ta.value = text;
@@ -960,17 +953,10 @@
           ta.style.left = '-9999px';
           document.body.appendChild(ta);
           ta.select();
-          try {
-            document.execCommand('copy');
-            btn.textContent = '已复制';
-          } catch (e) {
-            btn.textContent = '失败';
-          }
+          try { document.execCommand('copy'); flash('已复制'); } catch (e) { flash('失败'); }
           document.body.removeChild(ta);
-          setTimeout(() => btn.textContent = '复制', 1500);
         }
       };
-      header.appendChild(btn);
     });
   }
 
@@ -1199,7 +1185,6 @@
   // ===== 大纲生成与高亮 =====
   const outlinePanel = document.getElementById('outlinePanel');
   const outlineList = document.getElementById('outlineList');
-  const btnToggleOutline = document.getElementById('btnToggleOutline');
   let outlineItems = [];
 
   function updateOutline() {
@@ -1289,41 +1274,29 @@
     });
   }
 
-  if (btnToggleOutline) {
-    btnToggleOutline.addEventListener('click', () => {
-      outlinePanel.classList.toggle('open');
-      btnToggleOutline.classList.toggle('active');
-    });
-  }
-
   previewWrapper.addEventListener('scroll', () => {
     requestAnimationFrame(highlightOutline);
   });
 
   // ===== 复制到微信 =====
-  function copyHtmlBySelection(html, sourceNode) {
-    const tempDiv = sourceNode || document.createElement('div');
-    const shouldRemoveTemp = !sourceNode;
-    if (shouldRemoveTemp) {
-      tempDiv.setAttribute('contenteditable', 'true');
-      tempDiv.innerHTML = html;
-      tempDiv.style.cssText = [
-        'position:fixed',
-        'left:16px',
-        'top:0',
-        'width:677px',
-        'padding:20px',
-        'opacity:1',
-        'pointer-events:auto',
-        'z-index:99999',
-        'background:#fff',
-        'color:#000',
-        'font-size:16px',
-        'line-height:1.7',
-      ].join(';');
-    }
-    const previousEditable = tempDiv.getAttribute('contenteditable');
-    if (!shouldRemoveTemp) tempDiv.setAttribute('contenteditable', 'true');
+  function copyHtmlBySelection(html) {
+    const tempDiv = document.createElement('div');
+    tempDiv.setAttribute('contenteditable', 'true');
+    tempDiv.innerHTML = html;
+    tempDiv.style.cssText = [
+      'position:fixed',
+      'left:16px',
+      'top:0',
+      'width:677px',
+      'padding:20px',
+      'opacity:1',
+      'pointer-events:auto',
+      'z-index:99999',
+      'background:#fff',
+      'color:#000',
+      'font-size:16px',
+      'line-height:1.7',
+    ].join(';');
 
     const selection = window.getSelection();
     const savedRanges = [];
@@ -1334,7 +1307,7 @@
     }
     const activeElement = document.activeElement;
 
-    if (shouldRemoveTemp) document.body.appendChild(tempDiv);
+    document.body.appendChild(tempDiv);
     try {
       const range = document.createRange();
       range.selectNodeContents(tempDiv);
@@ -1348,49 +1321,58 @@
         selection.removeAllRanges();
         savedRanges.forEach(range => selection.addRange(range));
       }
-      if (shouldRemoveTemp) {
-        document.body.removeChild(tempDiv);
-      } else {
-        if (previousEditable === null) tempDiv.removeAttribute('contenteditable');
-        else tempDiv.setAttribute('contenteditable', previousEditable);
-      }
+      document.body.removeChild(tempDiv);
       if (activeElement && typeof activeElement.focus === 'function') {
         activeElement.focus({ preventScroll: true });
       }
     }
   }
 
-  async function copyRichHtml(html, successMessage, sourceNode) {
+  async function copyRichHtml(html, successMessage) {
     try {
       let copied = false;
       let method = '';
-      try {
-        copied = copyHtmlBySelection(html, sourceNode);
-        if (copied) method = sourceNode ? 'visible-selection' : 'selection-buffer';
-      } catch (e) {
-        copied = false;
+      let lastError = null;
+
+      // Prefer ClipboardItem API: we control text/html and text/plain exactly.
+      if (navigator.clipboard && window.ClipboardItem && navigator.clipboard.write) {
+        try {
+          const htmlBlob = new Blob([html], { type: 'text/html' });
+          const textBlob = new Blob([stripHtmlToText(html)], { type: 'text/plain' });
+          await navigator.clipboard.write([
+            new ClipboardItem({
+              'text/html': htmlBlob,
+              'text/plain': textBlob,
+            }),
+          ]);
+          copied = true;
+          method = 'clipboard-item';
+        } catch (e) {
+          lastError = e;
+          copied = false;
+        }
       }
 
-      if (!copied && navigator.clipboard && window.ClipboardItem && navigator.clipboard.write) {
-        const htmlBlob = new Blob([html], { type: 'text/html' });
-        const textBlob = new Blob([stripHtmlToText(html)], { type: 'text/plain' });
-        await navigator.clipboard.write([
-          new ClipboardItem({
-            'text/html': htmlBlob,
-            'text/plain': textBlob,
-          }),
-        ]);
-        copied = true;
-        method = 'clipboard-item';
+      // Fallback to execCommand selection copy
+      if (!copied) {
+        try {
+          copied = copyHtmlBySelection(html);
+          if (copied) method = 'selection-buffer';
+        } catch (e) {
+          lastError = e;
+          copied = false;
+        }
       }
 
       if (!copied) {
-        throw new Error('Copy command was not accepted by this browser');
+        throw lastError || new Error('Copy command was not accepted by this browser');
       }
       lastWechatCopyResult = { ok: true, method, time: Date.now(), htmlLength: html.length };
+      console.log('[ZgEdit] copyRichHtml ok:', method, 'htmlLength:', html.length, 'preview:', html.slice(0, 200));
       showToast(successMessage || '已复制，可直接粘贴到微信公众号编辑器');
       return true;
     } catch (e) {
+      console.error('[ZgEdit] copyRichHtml failed:', e);
       lastWechatCopyResult = { ok: false, method: 'failed', time: Date.now(), error: e.message || String(e) };
       showToast('复制失败，请使用导出 HTML 功能');
       return false;
@@ -1448,6 +1430,63 @@
       htmlOutput.select();
       document.execCommand('copy');
       showToast('HTML 代码已复制到剪贴板');
+    }
+  }
+
+  async function localizeImagesInPreview() {
+    if (!currentHtml) { showToast('请先输入内容'); return; }
+    // Render current HTML into a detached container so we can walk <img> tags
+    const container = document.createElement('div');
+    container.innerHTML = getWechatReadyHtml();
+    const imgs = Array.from(container.querySelectorAll('img'));
+    const external = imgs.filter(img => {
+      const src = img.getAttribute('src') || '';
+      return src.startsWith('http://') || src.startsWith('https://');
+    });
+    if (external.length === 0) {
+      showToast('未发现外链图片（base64/本地图片无需本地化）');
+      return;
+    }
+    const originalLabel = btnLocalizeImages ? btnLocalizeImages.innerHTML : '';
+    let done = 0;
+    let failed = 0;
+    const updateLabel = () => {
+      if (btnLocalizeImages) {
+        btnLocalizeImages.innerHTML = `本地化中 ${done}/${external.length}`;
+      }
+    };
+    updateLabel();
+    await Promise.all(external.map(async (img) => {
+      try {
+        const proxyUrl = '/api/proxy-image?url=' + encodeURIComponent(img.getAttribute('src'));
+        const res = await fetch(proxyUrl);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const blob = await res.blob();
+        const dataUrl = await new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result);
+          r.onerror = () => reject(new Error('FileReader 失败'));
+          r.readAsDataURL(blob);
+        });
+        img.setAttribute('src', dataUrl);
+        done++;
+      } catch (e) {
+        failed++;
+        console.warn('本地化失败', img.getAttribute('src'), e);
+      }
+      updateLabel();
+    }));
+    // Write the localized HTML back to currentHtml so the next copy uses it
+    currentHtml = container.innerHTML;
+    if (preview) preview.innerHTML = currentHtml;
+    if (publishPreview) publishPreview.innerHTML = currentHtml;
+    addCodeCopyButtons();
+    checkWechatCompatibility();
+    if (btnLocalizeImages) btnLocalizeImages.innerHTML = originalLabel;
+    if (failed > 0) {
+      showToast(`已本地化 ${done}/${external.length} 张；${failed} 张失败（见控制台）`, 4000);
+    } else {
+      showToast(`已本地化 ${done} 张图片，可点击「复制富文本」`, 2500);
     }
   }
 
@@ -2566,7 +2605,6 @@
       // 桌面模式恢复大纲
       if (outlinePanel && !outlinePanel.classList.contains('open')) {
         outlinePanel.classList.add('open');
-        if (btnToggleOutline) btnToggleOutline.classList.add('active');
       }
     } else {
       preview.classList.remove('desktop-mode');
@@ -2580,7 +2618,6 @@
       // 手机/平板模式自动收起大纲，避免拥挤
       if (outlinePanel && outlinePanel.classList.contains('open')) {
         outlinePanel.classList.remove('open');
-        if (btnToggleOutline) btnToggleOutline.classList.remove('active');
       }
     }
     if (deviceSelect) deviceSelect.value = device;
@@ -2706,6 +2743,47 @@
     fileInput.value = '';
   });
   bindCollectArticleModal();
+  // ===== Emoji / Symbol Picker =====
+  const EMOJI_DATA = {
+    common: '😀 😄 😁 😂 😊 😍 🤔 👍 👎 👏 🙏 💪 🔥 ⭐ 🌟 💡 ✅ ❌ ❤️ 💙 💜 🎉 🎁 🚀 📌 📎 🔗 💰 💸 📊 📈'.split(' '),
+    symbol: '★ ☆ ◆ ◇ ▲ △ ▼ ▽ ● ○ ■ □ ◉ ◎ ※ † ‡ § ¶ © ® ™ ° ℃ ‰ ‱ ＃ ＆ ＊ ＠ ① ② ③ ④ ⑤ ⑥ ⑦ ⑧ ⑨ ⑩'.split(' '),
+    math: '± × ÷ ≠ ≈ ≡ ≤ ≥ ∑ ∏ √ ∞ ∫ ∂ ∇ α β γ δ ε λ μ π σ ω Δ Σ Ω ∈ ∉ ⊂ ⊃ ∪ ∩ ∀ ∃ ∴ ∵'.split(' '),
+    arrow: '→ ← ↑ ↓ ↔ ↕ ⇒ ⇐ ⇑ ⇓ ⇔ ↗ ↘ ↙ ↖ ➜ ➡ ⬆ ⬇ ⮕ ⟶ ⟵ ⟸ ⟹'.split(' '),
+    kaomoji: ['(≧∇≦)b', '(^_^)v', '(*^▽^*)', "(❁´◡`❁)", '(─‿─)', '(✿◡‿◡)', '╮(￣▽￣)╭', '(；´д｀)', '(╯°□°)╯', '(；一_一)', 'orz', 'OTL', 'w(ﾟДﾟ)w', 'ᕕ( ᐛ )ᕗ', '( ๑•ᴗ•๑ )', '✧(≖ ◡ ≖✿)', '(づ｡◕‿‿◕｡)づ', '(⁄ ⁄•⁄ω⁄•⁄ ⁄)', 'Σ(°△°|||)', '(¬_¬")'],
+  };
+
+  function renderEmojiGrid(cat) {
+    const grid = document.getElementById('emojiPickerGrid');
+    if (!grid) return;
+    const list = EMOJI_DATA[cat] || [];
+    const isSymbol = cat !== 'common' && cat !== 'kaomoji';
+    grid.innerHTML = list.map(s => `<button class="emoji-cell${isSymbol || cat === 'kaomoji' ? ' symbol' : ''}" data-emoji="${escapeHtml(s)}" type="button">${escapeHtml(s)}</button>`).join('');
+    grid.querySelectorAll('.emoji-cell').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const s = btn.dataset.emoji;
+        if (editor && editor.executeEdits) {
+          editor.executeEdits('emoji', [{ range: editor.getSelection(), text: s }]);
+          editor.focus();
+        }
+      });
+    });
+  }
+
+  function initEmojiPicker() {
+    const chips = document.querySelectorAll('.emoji-chip');
+    chips.forEach(chip => {
+      chip.addEventListener('click', () => {
+        chips.forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        renderEmojiGrid(chip.dataset.emojiCat);
+      });
+    });
+    const closeBtn = document.getElementById('btnCloseEmojiPicker');
+    if (closeBtn) closeBtn.addEventListener('click', () => closeModal(document.getElementById('emojiPickerModal')));
+    renderEmojiGrid('common');
+  }
+
+  initEmojiPicker();
   btnClear.addEventListener('click', () => {
     if (editor.getValue() && !confirm('确定清空所有内容吗？')) return;
     editor.setValue('');
@@ -5859,6 +5937,8 @@
       { id: 'save', label: '保存内容', icon: '✅', shortcut: 'Ctrl+S', action: () => { saveContent(); showToast('已保存'); } },
       { id: 'find', label: '查找替换', icon: '🔎', shortcut: 'Ctrl+F', action: () => openFindBar() },
       { id: 'smart-format', label: '一键智能排版', icon: '🪄', shortcut: 'Ctrl+Shift+F', action: () => { smartFormat(); } },
+      { id: 'zen-mode', label: '专注模式', icon: '🧘', shortcut: 'Ctrl+.', action: toggleZenMode },
+      { id: 'emoji-picker', label: '插入 Emoji / 符号', icon: '😊', action: () => openModal(document.getElementById('emojiPickerModal')) },
       { id: 'sep1', type: 'separator' },
       { id: 'tab-articles', label: '侧栏：文章管理', icon: '📄', action: () => toggleSidePanel('articles') },
       { id: 'tab-templates', label: '侧栏：写作模板', icon: '📋', action: () => toggleSidePanel('templates') },
@@ -5987,6 +6067,7 @@
       { label: '表格', action: () => insertMarkdown('\n| ', ' | col2 |\n|------|------|\n| data | data |\n', 'col1') },
       { label: '分隔线', action: () => insertMarkdown('\n---\n', '', '') },
       { type: 'separator' },
+      { label: 'Emoji / 符号', action: () => openModal(document.getElementById('emojiPickerModal')) },
       { label: '写作模板', action: () => toggleSidePanel('templates') },
     ],
     view: [
@@ -5995,6 +6076,7 @@
       { label: '电脑预览', action: () => setPreviewDevice('desktop') },
       { label: '显示/隐藏预览', shortcut: 'Ctrl+P', action: togglePreviewVisibility },
       { label: '切换预览位置', shortcut: 'Ctrl+Shift+P', action: togglePreviewPosition },
+      { label: '专注模式', shortcut: 'Ctrl+.', action: toggleZenMode },
       { type: 'separator' },
       { label: '文章管理', action: () => toggleSidePanel('articles') },
       { label: '文章大纲', action: () => toggleSidePanel('outline') },
@@ -6153,6 +6235,12 @@
       togglePreviewVisibility();
       return;
     }
+    // Zen mode toggle (Ctrl+.)
+    if ((e.ctrlKey || e.metaKey) && e.key === '.') {
+      e.preventDefault();
+      toggleZenMode();
+      return;
+    }
     // Close command palette on Escape
     if (e.key === 'Escape' && commandPalette && commandPalette.style.display !== 'none') {
       closeCommandPalette();
@@ -6167,6 +6255,28 @@
       }
     }
   });
+
+  // ===== Zen Mode =====
+  let zenModeExitHint = null;
+  function toggleZenMode() {
+    document.body.classList.toggle('zen-mode');
+    const isOn = document.body.classList.contains('zen-mode');
+    if (isOn) {
+      if (!zenModeExitHint) {
+        zenModeExitHint = document.createElement('div');
+        zenModeExitHint.className = 'zen-exit-hint';
+        zenModeExitHint.textContent = '退出专注 (Ctrl+.)';
+        zenModeExitHint.addEventListener('click', toggleZenMode);
+        document.body.appendChild(zenModeExitHint);
+      }
+      zenModeExitHint.style.display = 'block';
+      showToast('已进入专注模式，按 Ctrl+. 退出', 2000);
+    } else {
+      if (zenModeExitHint) zenModeExitHint.style.display = 'none';
+      showToast('已退出专注模式', 1500);
+    }
+    setTimeout(() => { if (editor) editor.layout(); }, 50);
+  }
 
   // ===== Smart Format helper =====
   function smartFormat() {
@@ -6308,6 +6418,66 @@
   });
 
   // ===== Publish Modal =====
+  function getRenderedHtmlForMeta() {
+    if (currentHtml) return currentHtml;
+    const content = editorGetValue();
+    if (!content || !content.trim()) return '';
+    return renderContent(content, getFormat());
+  }
+
+  function extractTitleFromHtml(html) {
+    const host = document.createElement('div');
+    host.innerHTML = String(html || '');
+    for (let i = 1; i <= 3; i++) {
+      const h = host.querySelector(`h${i}`);
+      if (h && h.textContent.trim()) return h.textContent.trim();
+    }
+    const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT, null);
+    let node;
+    while ((node = walker.nextNode())) {
+      const text = node.textContent.trim();
+      if (text) return text;
+    }
+    return '';
+  }
+
+  function extractSummaryFromHtml(html, title) {
+    const host = document.createElement('div');
+    host.innerHTML = String(html || '');
+    const paras = host.querySelectorAll('p');
+    for (const p of paras) {
+      const text = p.textContent.trim();
+      if (text && text !== title) {
+        return text.length > 120 ? text.slice(0, 118).replace(/[，。；、\s]+$/, '') + '…' : text;
+      }
+    }
+    return '';
+  }
+
+  function extractAuthorFromHtml(html) {
+    const text = stripHtmlToText(html);
+    const match = text.match(/(?:作者|author|撰文|文)\s*[:：]\s*([^\n]{1,32})/i);
+    return match ? match[1].trim().slice(0, 32) : '';
+  }
+
+  function extractDateFromHtml(html) {
+    const text = stripHtmlToText(html);
+    const match = text.match(/\b(20\d{2}[./-]\d{1,2}[./-]\d{1,2})\b/);
+    return match ? match[1].replace(/[./]/g, '-') : '';
+  }
+
+  function getStatsFromHtml(html) {
+    const text = stripHtmlToText(html);
+    const chars = text.length;
+    const cnChars = (text.match(/[一-龥]/g) || []).length;
+    const words = text.trim() ? text.trim().split(/\s+/).filter(Boolean).length : 0;
+    const readTime = Math.max(1, Math.ceil(cnChars / 300 + words / 200));
+    const host = document.createElement('div');
+    host.innerHTML = String(html || '');
+    const paragraphs = Array.from(host.querySelectorAll('p')).filter(p => (p.textContent || '').trim().length > 0).length;
+    return { chars, cnChars, words, readTime, paragraphs };
+  }
+
   function getArticleTitleFromContent(content) {
     const lines = String(content || '').split('\n').map(line => line.trim()).filter(Boolean);
     const heading = lines.find(line => /^#{1,3}\s+/.test(line));
@@ -6370,18 +6540,22 @@
 
   function getPublishMetadata() {
     const content = editorGetValue();
-    const title = getArticleTitleFromContent(content);
+    const html = getRenderedHtmlForMeta();
+    const plainTitle = extractTitleFromHtml(html);
+    const markdownTitle = getArticleTitleFromContent(content);
+    const title = plainTitle || markdownTitle;
     const images = parseArticleImages(content);
     const cover = images.find(item => item.kind === 'network' || item.kind === 'base64') || images[0] || null;
-    const author = getArticleAuthorFromContent(content);
-    const summary = getArticleSummaryFromContent(content, title);
+    const author = getArticleAuthorFromContent(content) || extractAuthorFromHtml(html);
+    const summary = extractSummaryFromHtml(html, title) || getArticleSummaryFromContent(content, title);
+    const date = getArticlePublishDate(content) || extractDateFromHtml(html);
     return {
       title,
       author,
-      date: getArticlePublishDate(content),
+      date,
       summary,
       cover,
-      stats: getPublishMetaStats(content),
+      stats: html ? getStatsFromHtml(html) : getPublishMetaStats(content),
       images,
     };
   }
@@ -7016,9 +7190,12 @@
     btnPublishCopy.addEventListener('click', async () => {
       if (!currentHtml) { showToast('请先输入内容'); return; }
       const html = getWechatReadyHtml();
-      await copyRichHtml(html, '已复制富文本，可直接粘贴到微信公众号编辑器', publishPreview);
+      await copyRichHtml(html, '已复制富文本，可直接粘贴到微信公众号编辑器');
       renderPublishDiagnostics();
     });
+  }
+  if (btnLocalizeImages) {
+    btnLocalizeImages.addEventListener('click', localizeImagesInPreview);
   }
   if (btnPublishExportHtml) {
     btnPublishExportHtml.addEventListener('click', downloadHtml);

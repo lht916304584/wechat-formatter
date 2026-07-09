@@ -386,13 +386,6 @@ function renderMarkdown(content) {
     }
   }
 
-  if (!hasCover()) {
-    html = Components.cover(extractArticleTitle(content), '', '', '') + html;
-  }
-
-  html += Components.outro('愿这篇技术笔记，能帮你把复杂问题拆得更清楚。');
-  html += Components.signature();
-
   return html;
 }
 

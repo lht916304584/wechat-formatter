@@ -14,7 +14,7 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-const [, , remoteName = 'origin', branch = 'master'] = process.argv;
+const [, , remoteName = 'origin', branch = 'master', commitSha] = process.argv;
 
 function run(cmd, opts = {}) {
   return execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], ...opts }).trim();
@@ -68,7 +68,9 @@ function isExec(mode) {
 async function main() {
   const remoteUrl = getRemoteUrl();
   const { owner, repo } = parseRepo(remoteUrl);
-  const { sha: localSha, message } = getLocalHeadCommit();
+  const { sha: localSha, message } = commitSha
+    ? { sha: commitSha, message: run(`git log -1 --format=%B ${commitSha}`) }
+    : getLocalHeadCommit();
   const files = getChangedFiles(localSha);
 
   console.log(`仓库: ${owner}/${repo}`);
